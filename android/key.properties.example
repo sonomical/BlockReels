@@ -1,7 +1,0 @@
-# Copy this file outside the repository (recommended) or keep it in android/.
-# Set BLOCKREELS_KEY_PROPERTIES to its absolute path.
-# Store passwords in a password manager, not in source control.
-storePassword=CHANGE_ME
-keyPassword=CHANGE_ME
-keyAlias=blockreels
-storeFile=/absolute/path/to/blockreels-release.jks

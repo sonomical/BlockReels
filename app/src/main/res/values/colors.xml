@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="br_emerald">#00796B</color>
+    <color name="br_emerald_light">#26A69A</color>
+    <color name="br_mint">#80CBC4</color>
+    <color name="br_on_primary">#00382E</color>
+    <color name="br_scrim_top">#E60B110F</color>
+    <color name="br_scrim_bottom">#F5070B0A</color>
+    <color name="br_surface_container_high">#FF1A2320</color>
+    <color name="br_surface_container_highest">#FF242F2B</color>
+    <color name="br_outline_variant">#FF32413B</color>
+    <color name="br_text_primary">#FFE5EDE8</color>
+    <color name="br_text_secondary">#FFA9BDB4</color>
+    <color name="br_text_muted">#FF7D9389</color>
+</resources>

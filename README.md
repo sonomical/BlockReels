@@ -1,49 +1,20 @@
 # BlockReels
 
-BlockReels is an offline Android app that interrupts short-form videos on
-Instagram, YouTube, Facebook and TikTok. It aims to keep ordinary areas such as
-messaging, search and profiles usable. Detection depends on the layout of the
-supported app and can change when that app updates.
+BlockReels is an offline, native Kotlin + Jetpack Compose (Material Design 3) Android app that selectively interrupts short-form video feeds on Instagram, YouTube, Facebook, and TikTok while keeping ordinary areas such as messaging, search, and long-form video usable.
 
-## Using BlockReels
+## Architecture
 
-1. Install a build of BlockReels on Android 7.0 or later.
-2. Open the app and follow the setup flow to enable its Android Accessibility service.
-3. Choose the apps to protect and a blocking mode. You can also use schedules
-   and set a PIN for changes to protected settings.
+- **100% Native Kotlin & Jetpack Compose (Material 3)**: Zero cross-platform runtime overhead, dynamic System/Light/Dark/AMOLED themes, bundled local typography, and adaptive phone/tablet layouts.
+- **On-Device Accessibility Engine**: Multi-layer detectors (`InstagramDetector`, `YouTubeDetector`, `TikTokDetector`, `FacebookDetector`), `DisambiguationEngine`, `TraversalEngine`, `ScreenScanQueue`, and `InterventionController` with audio ducking/mute and hold-to-unlock overlay.
+- **Zero-Network Privacy**: `android.permission.INTERNET` is not declared anywhere in the app. All detection, rules, schedules, PBKDF2-SHA256 PIN hashing, and analytics run strictly on-device.
 
-BlockReels uses Accessibility to recognize video screens and show an
-interruption or leave the feed. It runs on-device. See the
-[privacy policy](docs/privacy-policy.md) for what the app reads and stores.
+## Build & Test
 
-## Build and test
-
-Install Flutter 3.47.8 or later, JDK 17 and the Android SDK. Run these commands
-from the repository root:
+Requires JDK 17 and the Android SDK:
 
 ```sh
-flutter pub get --enforce-lockfile
-flutter analyze
-flutter test
-flutter build apk --debug
+gradle :app:assembleDebug
+gradle :app:testDebugUnitTest
 ```
 
-For the Android JVM tests, run
-`BLOCKREELS_OFFLINE=0 ./scripts/android-gradle.sh :app:testDebugUnitTest`
-after setting up the SDK. A release build requires your own signing configuration
-as shown in [key.properties.example](android/key.properties.example).
-After dependencies are cached, the local verification command is
-`./scripts/verify-local.sh release`.
-
-Review changes to the Accessibility service on a real Android device before
-sharing a release build.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for build and pull request guidance.
-Report security and privacy issues as described in [SECURITY.md](SECURITY.md).
-
-## License
-
-BlockReels source code is available under the [MIT License](LICENSE).
-Third-party dependencies and build tools retain their own licenses.
+See [docs/privacy-policy.md](docs/privacy-policy.md) for privacy details and [LICENSE](LICENSE) for license terms.

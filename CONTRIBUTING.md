@@ -5,19 +5,11 @@ privacy vulnerability, follow [SECURITY.md](SECURITY.md).
 
 ## Set up and test
 
-Use Flutter 3.47.8 or later, a JDK 17 installation, and the Android SDK.
-From the project root, run:
+Use JDK 17 and the Android SDK. From the project root, run:
 
 ```sh
-flutter pub get --enforce-lockfile
-flutter analyze
-flutter test
-```
-
-For changes to Kotlin or Android, also run:
-
-```sh
-BLOCKREELS_OFFLINE=0 ./scripts/android-gradle.sh :app:testDebugUnitTest
+gradle :app:assembleDebug
+gradle :app:testDebugUnitTest
 ```
 
 When a change affects Accessibility, detection, or blocking overlays, include
@@ -35,9 +27,5 @@ that should remain usable.
    and actual result.
 
 Keep app behavior offline and preserve the
-[privacy policy](docs/privacy-policy.md). Use synthetic inputs or redact personal
-content in any diagnostic material. Keep signing keys, credentials, local
-settings, generated build files, and APKs out of source commits.
-
-Contributions to the project are made under its MIT License. Submit only work
-you have the right to share under that license.
+[privacy policy](docs/privacy-policy.md). Contributions to the project are made
+under its MIT License.
