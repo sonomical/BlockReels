@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.components
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,89 +15,185 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.state.BlockingScope
 import com.blockreels.app.state.InterventionMode
-import com.blockreels.app.ui.theme.BrandFacebook
-import com.blockreels.app.ui.theme.BrandInstagram
-import com.blockreels.app.ui.theme.BrandSnapchat
-import com.blockreels.app.ui.theme.BrandTikTok
-import com.blockreels.app.ui.theme.BrandYouTube
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Pure opaque Material 3 Expressive container card.
+ * Strictly zero borders and zero alpha translucency.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun TonalCard(
+fun ExpressiveCard(
     modifier: Modifier = Modifier,
-    shape: Shape = MaterialTheme.shapes.large,
+    shape: Shape = MaterialTheme.shapes.largeIncreased,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
-    borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Surface(
+    Card(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
-        color = containerColor,
-        border = BorderStroke(1.dp, borderColor)
-    ) {
-        Column(content = content)
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        content = content
+    )
+}
+
+/**
+ * Material 3 Expressive segmented card list corner geometry:
+ * outer corners = 20.dp, inner adjacent corners = 4.dp, separated by 2.dp vertical gap.
+ */
+fun segmentedListShape(index: Int, count: Int): Shape {
+    if (count <= 1) return RoundedCornerShape(20.dp)
+    return when (index) {
+        0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+        count - 1 -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
+        else -> RoundedCornerShape(4.dp)
     }
 }
 
+/**
+ * Native Material 3 Expressive connected toggle button group.
+ * Replaces legacy SegmentedButton rows per M3 Expressive specification.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun <T> ConnectedToggleButtonGroup(
+    options: List<T>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    label: (T) -> String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tagFor: ((T) -> String)? = null
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        options.forEachIndexed { index, option ->
+            val isChecked = selected == option
+            val shapes = when {
+                options.size == 1 -> ToggleButtonDefaults.shapes()
+                index == 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                index == options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+            }
+            ToggleButton(
+                checked = isChecked,
+                onCheckedChange = { if (it) onSelect(option) },
+                enabled = enabled,
+                shapes = shapes,
+                colors = ToggleButtonDefaults.tonalToggleButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { role = Role.RadioButton }
+                    .let { mod -> if (tagFor != null) mod.testTag(tagFor(option)) else mod }
+            ) {
+                Text(
+                    text = label(option),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Native Material 3 Switch with check/close thumb icons per M3 specification.
+ */
+@Composable
+fun ExpressiveSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier,
+        thumbContent = {
+            Icon(
+                imageVector = if (checked) Icons.Rounded.Check else Icons.Rounded.Close,
+                contentDescription = null,
+                modifier = Modifier.size(SwitchDefaults.IconSize)
+            )
+        }
+    )
+}
+
+/**
+ * Real Material 3 themed app icon wrapper.
+ * Loads installed app's Android themed monochrome/launcher icon when present,
+ * falling back to authentic M3-tinted monochrome platform vector glyphs.
+ */
 @Composable
 fun PlatformAvatar(
     platformKey: String,
     modifier: Modifier = Modifier,
-    sizeDp: Int = 44
+    sizeDp: Int = 44,
+    packageName: String? = null,
+    active: Boolean = true
 ) {
-    val (bg, icon) = when (platformKey.uppercase()) {
-        "INSTAGRAM" -> BrandInstagram to Icons.Rounded.CameraAlt
-        "YOUTUBE" -> BrandYouTube to Icons.Rounded.PlayArrow
-        "TIKTOK" -> BrandTikTok to Icons.Rounded.MusicNote
-        "FACEBOOK" -> BrandFacebook to Icons.Rounded.Public
-        "SNAPCHAT" -> BrandSnapchat to Icons.Rounded.Bolt
-        else -> MaterialTheme.colorScheme.primary to Icons.Rounded.Shield
-    }
-
-    Box(
-        modifier = modifier
-            .size(sizeDp.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(bg.copy(alpha = 0.14f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = "$platformKey icon",
-            tint = bg,
-            modifier = Modifier.size((sizeDp * 0.52f).dp)
-        )
-    }
+    AppThemedIcon(
+        platformKey = platformKey,
+        packageName = packageName,
+        modifier = modifier,
+        sizeDp = sizeDp,
+        active = active
+    )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SectionHeader(
     title: String,
@@ -109,13 +203,13 @@ fun SectionHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMediumEmphasized,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
@@ -161,23 +255,22 @@ fun ModeBadge(
     Surface(
         modifier = modifier,
         color = container,
+        contentColor = content,
         shape = CircleShape
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = content,
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(14.dp)
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = content,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1
             )
@@ -194,16 +287,16 @@ fun ScopeBadge(
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = if (isFull) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.85f)
-        else MaterialTheme.colorScheme.surfaceContainerHighest
+        color = if (isFull) MaterialTheme.colorScheme.tertiaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = if (isFull) MaterialTheme.colorScheme.onTertiaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant
     ) {
         Text(
             text = scope.displayName,
             style = MaterialTheme.typography.labelSmall,
-            color = if (isFull) MaterialTheme.colorScheme.onTertiaryContainer
-            else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
         )
     }
 }
@@ -230,6 +323,7 @@ fun formatDurationMinutes(minutes: Int): String {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AccessibilityDisclosureDialog(
     onDismiss: () -> Unit,
@@ -257,7 +351,10 @@ fun AccessibilityDisclosureDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onContinueToSettings) {
+            Button(
+                onClick = onContinueToSettings,
+                shapes = ButtonDefaults.shapes()
+            ) {
                 Text("Open Settings")
             }
         },

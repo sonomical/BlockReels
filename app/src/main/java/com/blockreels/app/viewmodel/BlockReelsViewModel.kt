@@ -78,6 +78,21 @@ data class BlockReelsUiState(
 
     val enabledTargetsCount: Int
         get() = targets.count { it.isEnabled }
+
+    val installedTargetsCount: Int
+        get() = targets.count { it.isInstalled }
+
+    val activeRegularSchedulesCount: Int
+        get() = regularSchedules.count { it.isActive }
+
+    val totalPassesUsedToday: Int
+        get() = passesUsedToday.values.sum()
+
+    val blocksLast7Days: Int
+        get() = analytics.dailySeries.sumOf { it.count }
+
+    val topBlockedPlatform: PlatformBreakdownItem?
+        get() = analytics.platformBreakdown.firstOrNull()
 }
 
 class BlockReelsViewModel(application: Application) : AndroidViewModel(application) {

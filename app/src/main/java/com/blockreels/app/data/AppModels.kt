@@ -248,4 +248,13 @@ object SupportedTargets {
         "SNAPCHAT" -> "Snapchat Spotlight"
         else -> "Short Video"
     }
+
+    fun primaryPackageForPlatform(platformKey: String): String? = when (platformKey.uppercase()) {
+        "INSTAGRAM" -> "com.instagram.android"
+        "YOUTUBE" -> "com.google.android.youtube"
+        "TIKTOK" -> "com.zhiliaoapp.musically"
+        "FACEBOOK" -> "com.facebook.katana"
+        "SNAPCHAT" -> "com.snapchat.android"
+        else -> null
+    }
 }

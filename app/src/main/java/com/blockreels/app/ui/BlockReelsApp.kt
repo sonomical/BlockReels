@@ -3,7 +3,6 @@ package com.blockreels.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -11,7 +10,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -26,17 +24,21 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -49,14 +51,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.blockreels.app.ui.components.FloatingBottomNavBar
-import com.blockreels.app.ui.components.FloatingNavItem
 import com.blockreels.app.ui.screens.AppBlockerScreen
 import com.blockreels.app.ui.screens.DashboardScreen
 import com.blockreels.app.ui.screens.MindfulnessPreviewScreen
@@ -96,28 +99,17 @@ private data class PendingPinAction(
     val onAuthorized: () -> Unit
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun BlockReelsApp(viewModel: BlockReelsViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     var selectedTab by remember { mutableStateOf(MainTab.SHIELD) }
     var modalScreen by remember { mutableStateOf(ModalScreen.NONE) }
     var pendingPinAction by remember { mutableStateOf<PendingPinAction?>(null) }
-
-    val navItems = remember {
-        MainTab.entries.map { tab ->
-            FloatingNavItem(
-                id = tab.name,
-                label = tab.navLabel,
-                selectedIcon = tab.selectedIcon,
-                unselectedIcon = tab.unselectedIcon,
-                testTag = tab.tag
-            )
-        }
-    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -151,8 +143,13 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
     BlockReelsTheme(themeMode = uiState.settings.themeMode) {
         when {
             uiState.isLoading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        ContainedLoadingIndicator()
+                    }
                 }
             }
             !uiState.settings.onboardingCompleted -> {
@@ -186,230 +183,255 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                 )
             }
             else -> {
+                val motionScheme = MaterialTheme.motionScheme
+                val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val useNavRail = maxWidth >= 600.dp
-                    val floatingBarClearance = if (useNavRail) 16.dp else 96.dp
 
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (useNavRail) {
                             NavigationRail(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
                             ) {
                                 MainTab.entries.forEach { tab ->
                                     val selected = selectedTab == tab
                                     NavigationRailItem(
                                         selected = selected,
-                                        onClick = { selectedTab = tab },
-                                        alwaysShowLabel = false,
+                                        onClick = {
+                                            if (!selected) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedTab = tab
+                                            }
+                                        },
                                         icon = {
                                             Icon(
                                                 imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
                                                 contentDescription = tab.navLabel
                                             )
                                         },
-                                        label = { Text(tab.navLabel) },
+                                        label = { Text(tab.navLabel, maxLines = 1) },
                                         modifier = Modifier.testTag(tab.tag)
                                     )
                                 }
                             }
                         }
 
-                        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                            Scaffold(
-                                modifier = Modifier.fillMaxSize(),
-                                containerColor = MaterialTheme.colorScheme.background,
-                                snackbarHost = {
-                                    SnackbarHost(
-                                        hostState = snackbarHostState,
-                                        modifier = Modifier.padding(
-                                            bottom = if (useNavRail) 0.dp else 80.dp
-                                        )
-                                    )
-                                },
-                                topBar = {
-                                    CenterAlignedTopAppBar(
-                                        title = {
-                                            AnimatedContent(
-                                                targetState = selectedTab.title,
-                                                transitionSpec = {
-                                                    fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                                                },
-                                                label = "topbar_title"
-                                            ) { title ->
-                                                Text(
-                                                    text = title,
-                                                    style = MaterialTheme.typography.titleLarge
-                                                )
-                                            }
-                                        },
-                                        colors = TopAppBarDefaults.topAppBarColors(
-                                            containerColor = MaterialTheme.colorScheme.background
-                                        )
-                                    )
-                                }
-                            ) { innerPadding ->
-                                val contentPadding = PaddingValues(
-                                    top = innerPadding.calculateTopPadding(),
-                                    bottom = innerPadding.calculateBottomPadding()
-                                )
-
-                                AnimatedContent(
-                                    targetState = selectedTab,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(contentPadding),
-                                    transitionSpec = {
-                                        val forward = targetState.ordinal >= initialState.ordinal
-                                        val slideIn = slideInHorizontally(tween(220)) { width ->
-                                            if (forward) width / 14 else -width / 14
+                        Scaffold(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            snackbarHost = {
+                                SnackbarHost(hostState = snackbarHostState)
+                            },
+                            topBar = {
+                                TopAppBar(
+                                    title = {
+                                        AnimatedContent(
+                                            targetState = selectedTab.title,
+                                            transitionSpec = {
+                                                fadeIn(motionScheme.fastEffectsSpec()) togetherWith
+                                                    fadeOut(motionScheme.fastEffectsSpec())
+                                            },
+                                            label = "topbar_title"
+                                        ) { title ->
+                                            Text(
+                                                text = title,
+                                                style = MaterialTheme.typography.headlineSmallEmphasized
+                                            )
                                         }
-                                        val slideOut = slideOutHorizontally(tween(180)) { width ->
-                                            if (forward) -width / 14 else width / 14
-                                        }
-                                        (fadeIn(tween(200)) + slideIn) togetherWith
-                                            (fadeOut(tween(140)) + slideOut)
                                     },
-                                    label = "main_tab_transition"
-                                ) { tab ->
-                                    when (tab) {
-                                        MainTab.SHIELD -> DashboardScreen(
-                                            uiState = uiState,
-                                            bottomContentPadding = floatingBarClearance,
-                                            onToggleMaster = { enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Pause Shield?",
-                                                        subtitle = "Enter PIN to pause protection."
-                                                    ) { viewModel.toggleMasterProtection(false) }
-                                                } else {
-                                                    viewModel.toggleMasterProtection(true)
-                                                }
-                                            },
-                                            onToggleTargetApp = { pkg, enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Disable Rule?",
-                                                        subtitle = "Enter PIN to relax blocking for this app."
-                                                    ) { viewModel.toggleTargetApp(pkg, false) }
-                                                } else {
-                                                    viewModel.toggleTargetApp(pkg, true)
-                                                }
-                                            },
-                                            onStartQuickBoost = viewModel::startQuickBoost,
-                                            onCancelQuickBoost = {
-                                                guardWithPinIfNeeded(
-                                                    title = "Cancel Focus Lock?",
-                                                    subtitle = "Enter PIN to end Focus Lock early."
-                                                ) { viewModel.cancelQuickBoost() }
-                                            },
-                                            onRevokeAllowance = viewModel::revokeTemporaryAllowance,
-                                            onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
-                                            onNavigateToEngine = { selectedTab = MainTab.ENGINE },
-                                            onNavigateToStats = { selectedTab = MainTab.ACTIVITY }
-                                        )
-                                        MainTab.ENGINE -> AppBlockerScreen(
-                                            uiState = uiState,
-                                            bottomContentPadding = floatingBarClearance,
-                                            onToggleTarget = { pkg, enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Disable Rule?",
-                                                        subtitle = "Enter PIN to disable blocking for this target."
-                                                    ) { viewModel.toggleTargetApp(pkg, false) }
-                                                } else {
-                                                    viewModel.toggleTargetApp(pkg, true)
-                                                }
-                                            },
-                                            onUpdateTargetRule = viewModel::updateTargetRule,
-                                            onUpdateGlobalMode = viewModel::updateGlobalMode,
-                                            onUpdateHoldDuration = viewModel::updateHoldDuration,
-                                            onUpdateAllowanceMinutes = viewModel::updateAllowanceMinutes,
-                                            onUpdateDailyPassLimit = viewModel::updateDailyPassLimit,
-                                            onUpdateEntryDelaySeconds = viewModel::updateEntryDelaySeconds,
-                                            onUpdateSensitivity = viewModel::updateSensitivity,
-                                            onUpdateAudioAction = viewModel::updateAudioAction,
-                                            onUpdateCustomMessage = viewModel::updateCustomMessage,
-                                            onToggleHaptics = viewModel::setHapticsEnabled,
-                                            onOpenPreviewOverlay = { modalScreen = ModalScreen.MINDFUL_PREVIEW }
-                                        )
-                                        MainTab.SCHEDULES -> SchedulesScreen(
-                                            uiState = uiState,
-                                            bottomContentPadding = floatingBarClearance,
-                                            onUpsertSchedule = viewModel::upsertSchedule,
-                                            onToggleSchedule = { id, active ->
-                                                if (!active) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Pause Schedule?",
-                                                        subtitle = "Enter PIN to pause this schedule."
-                                                    ) { viewModel.toggleSchedule(id, false) }
-                                                } else {
-                                                    viewModel.toggleSchedule(id, true)
-                                                }
-                                            },
-                                            onDeleteSchedule = { id ->
-                                                guardWithPinIfNeeded(
-                                                    title = "Delete Schedule?",
-                                                    subtitle = "Enter PIN to delete this schedule."
-                                                ) { viewModel.deleteSchedule(id) }
-                                            },
-                                            onCancelQuickBoost = {
-                                                guardWithPinIfNeeded(
-                                                    title = "Cancel Focus Lock?",
-                                                    subtitle = "Enter PIN to end Focus Lock early."
-                                                ) { viewModel.cancelQuickBoost() }
-                                            }
-                                        )
-                                        MainTab.ACTIVITY -> StatisticsScreen(
-                                            uiState = uiState,
-                                            bottomContentPadding = floatingBarClearance,
-                                            onSelectRange = viewModel::selectStatsRange,
-                                            onClearHistory = viewModel::clearHistory
-                                        )
-                                        MainTab.SETTINGS -> SettingsScreen(
-                                            uiState = uiState,
-                                            bottomContentPadding = floatingBarClearance,
-                                            onToggleStrictMode = { enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Disable Strict Lock?",
-                                                        subtitle = "Enter PIN to re-enable hold-to-pass."
-                                                    ) { viewModel.setStrictMode(false) }
-                                                } else {
-                                                    viewModel.setStrictMode(true)
-                                                }
-                                            },
-                                            onSelectTheme = viewModel::setThemeMode,
-                                            onRequestPinSetup = { modalScreen = ModalScreen.PIN_SETUP },
-                                            onRequestDisablePin = {
-                                                guardWithPinIfNeeded(
-                                                    title = "Remove PIN Lock?",
-                                                    subtitle = "Enter your current 4-digit PIN."
-                                                ) { viewModel.disablePinLock() }
-                                            },
-                                            onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
-                                            onOpenBatterySettings = viewModel::openBatterySettings,
-                                            onOpenNotificationSettings = viewModel::openNotificationSettings,
-                                            onExportBackup = viewModel::exportBackupJson,
-                                            onImportBackup = viewModel::importBackupJson,
-                                            onClearHistory = viewModel::clearHistory,
-                                            onReplayOnboarding = viewModel::resetOnboarding,
-                                            onShowMessage = { msg ->
-                                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                            }
-                                        )
+                                    colors = TopAppBarDefaults.topAppBarColors(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    scrollBehavior = scrollBehavior
+                                )
+                            },
+                            bottomBar = {
+                                if (!useNavRail) {
+                                    ShortNavigationBar(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                                    ) {
+                                        MainTab.entries.forEach { tab ->
+                                            val selected = selectedTab == tab
+                                            ShortNavigationBarItem(
+                                                selected = selected,
+                                                onClick = {
+                                                    if (!selected) {
+                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        selectedTab = tab
+                                                    }
+                                                },
+                                                icon = {
+                                                    Icon(
+                                                        imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                        contentDescription = tab.navLabel
+                                                    )
+                                                },
+                                                label = {
+                                                    Text(
+                                                        text = tab.navLabel,
+                                                        maxLines = 1
+                                                    )
+                                                },
+                                                modifier = Modifier.testTag(tab.tag)
+                                            )
+                                        }
                                     }
                                 }
                             }
-
-                            if (!useNavRail) {
-                                FloatingBottomNavBar(
-                                    items = navItems,
-                                    selectedId = selectedTab.name,
-                                    onSelect = { id ->
-                                        MainTab.entries.firstOrNull { it.name == id }?.let { selectedTab = it }
-                                    },
-                                    modifier = Modifier.align(Alignment.BottomCenter)
-                                )
+                        ) { innerPadding ->
+                            AnimatedContent(
+                                targetState = selectedTab,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding),
+                                transitionSpec = {
+                                    val forward = targetState.ordinal >= initialState.ordinal
+                                    val slideIn = slideInHorizontally(motionScheme.fastSpatialSpec()) { width ->
+                                        if (forward) width / 16 else -width / 16
+                                    }
+                                    val slideOut = slideOutHorizontally(motionScheme.fastSpatialSpec()) { width ->
+                                        if (forward) -width / 16 else width / 16
+                                    }
+                                    (fadeIn(motionScheme.fastEffectsSpec()) + slideIn) togetherWith
+                                        (fadeOut(motionScheme.fastEffectsSpec()) + slideOut)
+                                },
+                                label = "main_tab_transition"
+                            ) { tab ->
+                                when (tab) {
+                                    MainTab.SHIELD -> DashboardScreen(
+                                        uiState = uiState,
+                                        bottomContentPadding = 24.dp,
+                                        onToggleMaster = { enable ->
+                                            if (!enable) {
+                                                guardWithPinIfNeeded(
+                                                    title = "Pause Shield?",
+                                                    subtitle = "Enter PIN to pause protection."
+                                                ) { viewModel.toggleMasterProtection(false) }
+                                            } else {
+                                                viewModel.toggleMasterProtection(true)
+                                            }
+                                        },
+                                        onToggleTargetApp = { pkg, enable ->
+                                            if (!enable) {
+                                                guardWithPinIfNeeded(
+                                                    title = "Disable Rule?",
+                                                    subtitle = "Enter PIN to relax blocking for this app."
+                                                ) { viewModel.toggleTargetApp(pkg, false) }
+                                            } else {
+                                                viewModel.toggleTargetApp(pkg, true)
+                                            }
+                                        },
+                                        onStartQuickBoost = viewModel::startQuickBoost,
+                                        onCancelQuickBoost = {
+                                            guardWithPinIfNeeded(
+                                                title = "Cancel Focus Lock?",
+                                                subtitle = "Enter PIN to end Focus Lock early."
+                                            ) { viewModel.cancelQuickBoost() }
+                                        },
+                                        onRevokeAllowance = viewModel::revokeTemporaryAllowance,
+                                        onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
+                                        onNavigateToEngine = { selectedTab = MainTab.ENGINE },
+                                        onNavigateToSchedules = { selectedTab = MainTab.SCHEDULES },
+                                        onNavigateToStats = { selectedTab = MainTab.ACTIVITY },
+                                        onNavigateToSettings = { selectedTab = MainTab.SETTINGS }
+                                    )
+                                    MainTab.ENGINE -> AppBlockerScreen(
+                                        uiState = uiState,
+                                        bottomContentPadding = 24.dp,
+                                        onToggleTarget = { pkg, enable ->
+                                            if (!enable) {
+                                                guardWithPinIfNeeded(
+                                                    title = "Disable Rule?",
+                                                    subtitle = "Enter PIN to disable blocking for this target."
+                                                ) { viewModel.toggleTargetApp(pkg, false) }
+                                            } else {
+                                                viewModel.toggleTargetApp(pkg, true)
+                                            }
+                                        },
+                                        onUpdateTargetRule = viewModel::updateTargetRule,
+                                        onUpdateGlobalMode = viewModel::updateGlobalMode,
+                                        onUpdateHoldDuration = viewModel::updateHoldDuration,
+                                        onUpdateAllowanceMinutes = viewModel::updateAllowanceMinutes,
+                                        onUpdateDailyPassLimit = viewModel::updateDailyPassLimit,
+                                        onUpdateEntryDelaySeconds = viewModel::updateEntryDelaySeconds,
+                                        onUpdateSensitivity = viewModel::updateSensitivity,
+                                        onUpdateAudioAction = viewModel::updateAudioAction,
+                                        onUpdateCustomMessage = viewModel::updateCustomMessage,
+                                        onToggleHaptics = viewModel::setHapticsEnabled,
+                                        onOpenPreviewOverlay = { modalScreen = ModalScreen.MINDFUL_PREVIEW }
+                                    )
+                                    MainTab.SCHEDULES -> SchedulesScreen(
+                                        uiState = uiState,
+                                        bottomContentPadding = 24.dp,
+                                        onUpsertSchedule = viewModel::upsertSchedule,
+                                        onToggleSchedule = { id, active ->
+                                            if (!active) {
+                                                guardWithPinIfNeeded(
+                                                    title = "Pause Schedule?",
+                                                    subtitle = "Enter PIN to pause this schedule."
+                                                ) { viewModel.toggleSchedule(id, false) }
+                                            } else {
+                                                viewModel.toggleSchedule(id, true)
+                                            }
+                                        },
+                                        onDeleteSchedule = { id ->
+                                            guardWithPinIfNeeded(
+                                                title = "Delete Schedule?",
+                                                subtitle = "Enter PIN to delete this schedule."
+                                            ) { viewModel.deleteSchedule(id) }
+                                        },
+                                        onCancelQuickBoost = {
+                                            guardWithPinIfNeeded(
+                                                title = "Cancel Focus Lock?",
+                                                subtitle = "Enter PIN to end Focus Lock early."
+                                            ) { viewModel.cancelQuickBoost() }
+                                        }
+                                    )
+                                    MainTab.ACTIVITY -> StatisticsScreen(
+                                        uiState = uiState,
+                                        bottomContentPadding = 24.dp,
+                                        onSelectRange = viewModel::selectStatsRange,
+                                        onClearHistory = viewModel::clearHistory
+                                    )
+                                    MainTab.SETTINGS -> SettingsScreen(
+                                        uiState = uiState,
+                                        bottomContentPadding = 24.dp,
+                                        onToggleStrictMode = { enable ->
+                                            if (!enable) {
+                                                guardWithPinIfNeeded(
+                                                    title = "Disable Strict Lock?",
+                                                    subtitle = "Enter PIN to re-enable hold-to-pass."
+                                                ) { viewModel.setStrictMode(false) }
+                                            } else {
+                                                viewModel.setStrictMode(true)
+                                            }
+                                        },
+                                        onSelectTheme = viewModel::setThemeMode,
+                                        onRequestPinSetup = { modalScreen = ModalScreen.PIN_SETUP },
+                                        onRequestDisablePin = {
+                                            guardWithPinIfNeeded(
+                                                title = "Remove PIN Lock?",
+                                                subtitle = "Enter your current 4-digit PIN."
+                                            ) { viewModel.disablePinLock() }
+                                        },
+                                        onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
+                                        onOpenBatterySettings = viewModel::openBatterySettings,
+                                        onOpenNotificationSettings = viewModel::openNotificationSettings,
+                                        onExportBackup = viewModel::exportBackupJson,
+                                        onImportBackup = viewModel::importBackupJson,
+                                        onClearHistory = viewModel::clearHistory,
+                                        onReplayOnboarding = viewModel::resetOnboarding,
+                                        onShowMessage = { msg ->
+                                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

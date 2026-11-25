@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,42 +11,43 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayCircleOutline
+import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TonalToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -58,10 +56,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -70,11 +68,14 @@ import com.blockreels.app.state.AudioAction
 import com.blockreels.app.state.BlockingScope
 import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionMode
+import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
+import com.blockreels.app.ui.components.ExpressiveCard
+import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.ModeBadge
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.ScopeBadge
 import com.blockreels.app.ui.components.SectionHeader
-import com.blockreels.app.ui.components.TonalCard
+import com.blockreels.app.ui.components.segmentedListShape
 import com.blockreels.app.ui.theme.MonoFontFamily
 import com.blockreels.app.viewmodel.BlockReelsUiState
 import kotlin.math.roundToInt
@@ -90,11 +91,11 @@ private enum class TargetFilter(val label: String) {
     INSTALLED("Installed")
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AppBlockerScreen(
     uiState: BlockReelsUiState,
-    bottomContentPadding: Dp = 96.dp,
+    bottomContentPadding: Dp = 24.dp,
     onToggleTarget: (String, Boolean) -> Unit,
     onUpdateTargetRule: (TargetAppConfig) -> Unit,
     onUpdateGlobalMode: (InterventionMode) -> Unit,
@@ -128,21 +129,51 @@ fun AppBlockerScreen(
                 .fillMaxSize()
                 .widthIn(max = 680.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomContentPadding),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item(key = "engine_section_tabs") {
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    EngineSection.entries.forEachIndexed { idx, tab ->
-                        SegmentedButton(
-                            selected = section == tab,
-                            onClick = { section = tab },
-                            shape = SegmentedButtonDefaults.itemShape(idx, EngineSection.entries.size),
-                            modifier = Modifier.testTag("engine_tab_${tab.name.lowercase()}")
-                        ) {
-                            Text(tab.label)
-                        }
-                    }
+            // Engine Status Summary Strip
+            item(key = "engine_summary") {
+                val activeMode = if (uiState.settings.strictMode) {
+                    InterventionMode.STRICT_BLOCK
+                } else {
+                    uiState.settings.globalMode
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    EngineStatPill(
+                        label = "Guarded",
+                        value = "${uiState.enabledTargetsCount}/${uiState.targets.size}",
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    EngineStatPill(
+                        label = "Installed",
+                        value = uiState.installedTargetsCount.toString(),
+                        container = MaterialTheme.colorScheme.surfaceContainerLow,
+                        content = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    EngineStatPill(
+                        label = "Default",
+                        value = activeMode.shortLabel,
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            item(key = "engine_section_tabs") {
+                ConnectedToggleButtonGroup(
+                    options = EngineSection.entries,
+                    selected = section,
+                    onSelect = { section = it },
+                    label = { it.label },
+                    tagFor = { "engine_tab_${it.name.lowercase()}" }
+                )
             }
 
             if (section == EngineSection.TARGETS) {
@@ -154,17 +185,23 @@ fun AppBlockerScreen(
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TargetFilter.entries.forEach { option ->
+                                val count = when (option) {
+                                    TargetFilter.ALL -> uiState.targets.size
+                                    TargetFilter.ACTIVE -> uiState.enabledTargetsCount
+                                    TargetFilter.INSTALLED -> uiState.installedTargetsCount
+                                }
                                 FilterChip(
                                     selected = filter == option,
                                     onClick = { filter = option },
-                                    label = { Text(option.label) },
+                                    label = { Text("${option.label} ($count)", maxLines = 1) },
                                     modifier = Modifier.testTag("apps_filter_${option.name.lowercase()}")
                                 )
                             }
                         }
                         FilledTonalButton(
                             onClick = onOpenPreviewOverlay,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shapes = ButtonDefaults.shapes(),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("apps_preview_overlay_btn")
                         ) {
                             Icon(
@@ -172,7 +209,7 @@ fun AppBlockerScreen(
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("Test")
                         }
                     }
@@ -180,9 +217,9 @@ fun AppBlockerScreen(
 
                 if (filteredTargets.isEmpty()) {
                     item(key = "empty_filter") {
-                        TonalCard {
+                        ExpressiveCard {
                             Text(
-                                text = "No matching targets.",
+                                text = "No targets match this filter.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(20.dp)
@@ -190,17 +227,22 @@ fun AppBlockerScreen(
                         }
                     }
                 } else {
-                    items(filteredTargets, key = { it.packageName }) { target ->
-                        TargetRuleCard(
-                            target = target,
-                            strictModeOverride = uiState.settings.strictMode,
-                            globalHoldSeconds = uiState.settings.holdDurationSeconds,
-                            globalAllowanceMinutes = uiState.settings.allowanceMinutes,
-                            globalDailyLimit = uiState.settings.dailyPassLimit,
-                            passesUsedToday = uiState.passesUsedToday[target.packageName] ?: 0,
-                            onToggle = { enabled -> onToggleTarget(target.packageName, enabled) },
-                            onConfigure = { editingTarget = target }
-                        )
+                    item(key = "targets_segmented_list") {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            filteredTargets.forEachIndexed { idx, target ->
+                                TargetRuleCard(
+                                    target = target,
+                                    shape = segmentedListShape(idx, filteredTargets.size),
+                                    strictModeOverride = uiState.settings.strictMode,
+                                    globalHoldSeconds = uiState.settings.holdDurationSeconds,
+                                    globalAllowanceMinutes = uiState.settings.allowanceMinutes,
+                                    globalDailyLimit = uiState.settings.dailyPassLimit,
+                                    passesUsedToday = uiState.passesUsedToday[target.packageName] ?: 0,
+                                    onToggle = { enabled -> onToggleTarget(target.packageName, enabled) },
+                                    onConfigure = { editingTarget = target }
+                                )
+                            }
+                        }
                     }
                 }
             } else {
@@ -244,10 +286,6 @@ fun AppBlockerScreen(
                     )
                 }
             }
-
-            item(key = "bottom_space") {
-                Spacer(modifier = Modifier.height(12.dp))
-            }
         }
     }
 
@@ -281,10 +319,13 @@ fun AppBlockerScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    onUpdateCustomMessage(draft)
-                    showPromptDialog = false
-                }) { Text("Save") }
+                Button(
+                    onClick = {
+                        onUpdateCustomMessage(draft)
+                        showPromptDialog = false
+                    },
+                    shapes = ButtonDefaults.shapes()
+                ) { Text("Save") }
             },
             dismissButton = {
                 TextButton(onClick = { showPromptDialog = false }) { Text("Cancel") }
@@ -293,9 +334,44 @@ fun AppBlockerScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun EngineStatPill(
+    label: String,
+    value: String,
+    container: Color,
+    content: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.largeIncreased,
+        color = container,
+        contentColor = content
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLargeEmphasized.copy(fontFamily = MonoFontFamily),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
+        }
+    }
+}
+
 @Composable
 private fun TargetRuleCard(
     target: TargetAppConfig,
+    shape: Shape,
     strictModeOverride: Boolean,
     globalHoldSeconds: Int,
     globalAllowanceMinutes: Int,
@@ -310,22 +386,16 @@ private fun TargetRuleCard(
     val effectiveLimit = target.dailyPassLimitOverride ?: globalDailyLimit
 
     Surface(
+        onClick = onConfigure,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onConfigure)
             .testTag("app_target_card_${target.packageName}"),
-        shape = MaterialTheme.shapes.large,
+        shape = shape,
         color = if (target.isEnabled) MaterialTheme.colorScheme.surfaceContainerLow
-        else MaterialTheme.colorScheme.surfaceContainerLowest,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (target.isEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
-            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-        )
+        else MaterialTheme.colorScheme.surfaceContainerLowest
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
@@ -333,11 +403,16 @@ private fun TargetRuleCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                PlatformAvatar(platformKey = target.platformKey, sizeDp = 42)
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                PlatformAvatar(
+                    platformKey = target.platformKey,
+                    packageName = target.packageName,
+                    sizeDp = 46,
+                    active = target.isEnabled
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             text = target.displayName,
@@ -347,12 +422,17 @@ private fun TargetRuleCard(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (target.isInstalled) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            ) {
+                                Text(
+                                    text = "Installed",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                     Text(
@@ -361,7 +441,7 @@ private fun TargetRuleCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
+                ExpressiveSwitch(
                     checked = target.isEnabled,
                     onCheckedChange = onToggle,
                     modifier = Modifier.testTag("app_toggle_${target.packageName}")
@@ -392,45 +472,71 @@ private fun TargetRuleCard(
                             )
                         }
                     }
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = "Configure ${target.displayName}",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = "Configure ${target.displayName}",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (target.hasCustomOverrides) "Custom" else "Rule",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+private data class ModeCardOption(
+    val mode: InterventionMode,
+    val subtitle: String,
+    val icon: ImageVector
+)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun EngineGlobalModeSection(
     selected: InterventionMode,
     strictLocked: Boolean,
     onSelect: (InterventionMode) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(
             title = "Default Intervention",
             trailing = if (strictLocked) {
                 {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Strict Lock",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Lock,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Strict Lock",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                 }
             } else null
@@ -438,10 +544,10 @@ private fun EngineGlobalModeSection(
 
         val effective = if (strictLocked) InterventionMode.STRICT_BLOCK else selected
         val modes = listOf(
-            InterventionMode.AUTO_BACK to "Exit via Back",
-            InterventionMode.REDIRECT_HOME to "Jump to Home",
-            InterventionMode.MINDFUL_PAUSE to "Hold-to-Unlock",
-            InterventionMode.STRICT_BLOCK to "Hard Lock"
+            ModeCardOption(InterventionMode.AUTO_BACK, "Exit via Back", Icons.Rounded.Undo),
+            ModeCardOption(InterventionMode.REDIRECT_HOME, "Jump to Home", Icons.Rounded.Home),
+            ModeCardOption(InterventionMode.MINDFUL_PAUSE, "Hold-to-Unlock", Icons.Rounded.SelfImprovement),
+            ModeCardOption(InterventionMode.STRICT_BLOCK, "Hard Lock", Icons.Rounded.Block)
         )
 
         modes.chunked(2).forEach { pair ->
@@ -449,37 +555,47 @@ private fun EngineGlobalModeSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                pair.forEach { (mode, spec) ->
-                    val isSelected = effective == mode
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerLow,
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+                pair.forEach { option ->
+                    val isSelected = effective == option.mode
+                    TonalToggleButton(
+                        checked = isSelected,
+                        enabled = !strictLocked,
+                        onCheckedChange = { if (it) onSelect(option.mode) },
+                        shapes = ToggleButtonDefaults.shapes(
+                            shape = MaterialTheme.shapes.largeIncreased,
+                            pressedShape = MaterialTheme.shapes.medium,
+                            checkedShape = MaterialTheme.shapes.extraLarge
                         ),
+                        colors = ToggleButtonDefaults.tonalToggleButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        contentPadding = PaddingValues(16.dp),
                         modifier = Modifier
                             .weight(1f)
-                            .clip(MaterialTheme.shapes.large)
-                            .clickable(enabled = !strictLocked) { onSelect(mode) }
-                            .testTag("engine_global_mode_${mode.name.lowercase()}")
+                            .testTag("engine_global_mode_${option.mode.name.lowercase()}")
                     ) {
                         Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            Icon(
+                                imageVector = option.icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
                             Text(
-                                text = mode.displayName,
+                                text = option.mode.displayName,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                                 else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = spec,
+                                text = option.subtitle,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -490,7 +606,6 @@ private fun EngineGlobalModeSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EngineDetectionSection(
     sensitivity: DetectionSensitivity,
@@ -498,70 +613,80 @@ private fun EngineDetectionSection(
     onSelectSensitivity: (DetectionSensitivity) -> Unit,
     onSelectEntryDelay: (Int) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title = "Detection Engine")
-        TonalCard {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Surface(
+                shape = segmentedListShape(0, 2),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(text = "Sensitivity", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = sensitivity.specLabel,
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        DetectionSensitivity.entries.forEachIndexed { idx, level ->
-                            SegmentedButton(
-                                selected = sensitivity == level,
-                                onClick = { onSelectSensitivity(level) },
-                                shape = SegmentedButtonDefaults.itemShape(idx, DetectionSensitivity.entries.size),
-                                modifier = Modifier.testTag("engine_sensitivity_${level.name.lowercase()}")
-                            ) {
-                                Text(level.displayName, maxLines = 1)
-                            }
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Text(
+                                text = sensitivity.specLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
                         }
                     }
+                    ConnectedToggleButtonGroup(
+                        options = DetectionSensitivity.entries,
+                        selected = sensitivity,
+                        onSelect = onSelectSensitivity,
+                        label = { it.displayName },
+                        tagFor = { "engine_sensitivity_${it.name.lowercase()}" }
+                    )
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                shape = segmentedListShape(1, 2),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(text = "Entry Grace Delay", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = if (entryDelaySeconds == 0) "Instant" else "${entryDelaySeconds}s",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(0 to "Instant", 2 to "2s", 5 to "5s", 10 to "10s").forEach { (sec, label) ->
-                            FilterChip(
-                                selected = entryDelaySeconds == sec,
-                                onClick = { onSelectEntryDelay(sec) },
-                                label = { Text(label, maxLines = 1) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("engine_delay_${sec}")
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Text(
+                                text = if (entryDelaySeconds == 0) "Instant" else "${entryDelaySeconds}s",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
                     }
+                    ConnectedToggleButtonGroup(
+                        options = listOf(0, 2, 5, 10),
+                        selected = entryDelaySeconds,
+                        onSelect = onSelectEntryDelay,
+                        label = { if (it == 0) "Instant" else "${it}s" },
+                        tagFor = { "engine_delay_$it" }
+                    )
                 }
             }
         }
@@ -580,25 +705,35 @@ private fun EngineFrictionSection(
     onChangeDailyLimit: (Int) -> Unit,
     onEditPrompt: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title = "Mindful Pause & Quotas")
-        TonalCard {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Surface(
+                shape = segmentedListShape(0, 4),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Hold Duration", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = "${holdDurationSeconds}s",
-                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Text(
+                                text = "${holdDurationSeconds}s",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                     Slider(
                         value = holdDurationSeconds.toFloat(),
@@ -608,13 +743,21 @@ private fun EngineFrictionSection(
                         modifier = Modifier.testTag("engine_hold_slider")
                     )
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                shape = segmentedListShape(1, 4),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Pass Duration", style = MaterialTheme.typography.titleSmall)
                         Text(
@@ -637,13 +780,21 @@ private fun EngineFrictionSection(
                         }
                     }
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                shape = segmentedListShape(2, 4),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Daily Pass Cap", style = MaterialTheme.typography.titleSmall)
                         Text(
@@ -666,15 +817,18 @@ private fun EngineFrictionSection(
                         }
                     }
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-
+            Surface(
+                onClick = onEditPrompt,
+                shape = segmentedListShape(3, 4),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("engine_custom_message_row")
+            ) {
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable(onClick = onEditPrompt)
-                        .testTag("engine_custom_message_row"),
                     leadingContent = { Icon(Icons.Rounded.EditNote, contentDescription = null) },
                     headlineContent = { Text("Pause Prompt") },
                     supportingContent = { Text(customMessage, maxLines = 2, overflow = TextOverflow.Ellipsis) }
@@ -684,7 +838,7 @@ private fun EngineFrictionSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun EngineFeedbackSection(
     audioAction: AudioAction,
@@ -693,64 +847,76 @@ private fun EngineFeedbackSection(
     onToggleHaptics: (Boolean) -> Unit,
     onOpenPreview: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title = "Audio & Feedback")
-        TonalCard {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Surface(
+                shape = segmentedListShape(0, 3),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text("Audio Action", style = MaterialTheme.typography.titleSmall)
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        AudioAction.entries.forEachIndexed { idx, action ->
-                            SegmentedButton(
-                                selected = audioAction == action,
-                                onClick = { onSelectAudio(action) },
-                                shape = SegmentedButtonDefaults.itemShape(idx, AudioAction.entries.size),
-                                modifier = Modifier.testTag("engine_audio_${action.name.lowercase()}")
-                            ) {
-                                Text(action.displayName, maxLines = 1)
-                            }
-                        }
-                    }
+                    ConnectedToggleButtonGroup(
+                        options = AudioAction.entries,
+                        selected = audioAction,
+                        onSelect = onSelectAudio,
+                        label = { it.displayName },
+                        tagFor = { "engine_audio_${it.name.lowercase()}" }
+                    )
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-
+            Surface(
+                shape = segmentedListShape(1, 3),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Icon(Icons.Rounded.Vibration, contentDescription = null) },
                     headlineContent = { Text("Haptic Feedback") },
                     trailingContent = {
-                        Switch(
+                        ExpressiveSwitch(
                             checked = hapticsEnabled,
                             onCheckedChange = onToggleHaptics,
                             modifier = Modifier.testTag("engine_haptics_switch")
                         )
                     }
                 )
+            }
 
-                FilledTonalButton(
-                    onClick = onOpenPreview,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("engine_preview_overlay_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PlayCircleOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Test Pause Overlay")
+            Surface(
+                shape = segmentedListShape(2, 3),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    FilledTonalButton(
+                        onClick = onOpenPreview,
+                        shapes = ButtonDefaults.shapes(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("engine_preview_overlay_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayCircleOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Test Pause Overlay")
+                    }
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun TargetRuleEditorSheet(
     target: TargetAppConfig,
@@ -769,9 +935,15 @@ private fun TargetRuleEditorSheet(
     var allowanceOverride by remember { mutableStateOf(target.allowanceMinutesOverride) }
     var limitOverride by remember { mutableStateOf(target.dailyPassLimitOverride) }
 
+    val hasAnyOverride = scope != BlockingScope.FEED_ONLY ||
+        holdOverride != null ||
+        allowanceOverride != null ||
+        limitOverride != null
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier = Modifier
@@ -786,47 +958,42 @@ private fun TargetRuleEditorSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                PlatformAvatar(platformKey = target.platformKey, sizeDp = 44)
+                PlatformAvatar(
+                    platformKey = target.platformKey,
+                    packageName = target.packageName,
+                    sizeDp = 48,
+                    active = enabled
+                )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(target.displayName, style = MaterialTheme.typography.headlineSmall)
+                    Text(target.displayName, style = MaterialTheme.typography.headlineSmallEmphasized)
                     Text(
                         target.feedName,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(checked = enabled, onCheckedChange = { enabled = it })
+                ExpressiveSwitch(checked = enabled, onCheckedChange = { enabled = it })
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Blocking Scope", style = MaterialTheme.typography.titleSmall)
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    BlockingScope.entries.forEachIndexed { idx, s ->
-                        SegmentedButton(
-                            selected = scope == s,
-                            onClick = { scope = s },
-                            shape = SegmentedButtonDefaults.itemShape(idx, BlockingScope.entries.size)
-                        ) {
-                            Text(s.displayName)
-                        }
-                    }
-                }
+                ConnectedToggleButtonGroup(
+                    options = BlockingScope.entries,
+                    selected = scope,
+                    onSelect = { scope = it },
+                    label = { it.displayName }
+                )
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Intervention Mode", style = MaterialTheme.typography.titleSmall)
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    InterventionMode.entries.forEachIndexed { idx, m ->
-                        SegmentedButton(
-                            selected = (if (strictLocked) InterventionMode.STRICT_BLOCK else mode) == m,
-                            enabled = !strictLocked,
-                            onClick = { mode = m },
-                            shape = SegmentedButtonDefaults.itemShape(idx, InterventionMode.entries.size)
-                        ) {
-                            Text(m.shortLabel, maxLines = 1)
-                        }
-                    }
-                }
+                ConnectedToggleButtonGroup(
+                    options = InterventionMode.entries,
+                    selected = if (strictLocked) InterventionMode.STRICT_BLOCK else mode,
+                    onSelect = { mode = it },
+                    enabled = !strictLocked,
+                    label = { it.shortLabel }
+                )
             }
 
             if (mode == InterventionMode.MINDFUL_PAUSE && !strictLocked) {
@@ -918,25 +1085,43 @@ private fun TargetRuleEditorSheet(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        onSave(
-                            target.copy(
-                                isEnabled = enabled,
-                                scope = scope,
-                                mode = mode,
-                                holdDurationOverride = holdOverride,
-                                allowanceMinutesOverride = allowanceOverride,
-                                dailyPassLimitOverride = limitOverride
-                            )
-                        )
+                if (hasAnyOverride) {
+                    TextButton(
+                        onClick = {
+                            scope = BlockingScope.FEED_ONLY
+                            holdOverride = null
+                            allowanceOverride = null
+                            limitOverride = null
+                        }
+                    ) {
+                        Text("Reset overrides")
                     }
-                ) {
-                    Text("Save")
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(
+                        onClick = {
+                            onSave(
+                                target.copy(
+                                    isEnabled = enabled,
+                                    scope = scope,
+                                    mode = mode,
+                                    holdDurationOverride = holdOverride,
+                                    allowanceMinutesOverride = allowanceOverride,
+                                    dailyPassLimitOverride = limitOverride
+                                )
+                            )
+                        },
+                        shapes = ButtonDefaults.shapes()
+                    ) {
+                        Text("Save")
+                    }
                 }
             }
         }

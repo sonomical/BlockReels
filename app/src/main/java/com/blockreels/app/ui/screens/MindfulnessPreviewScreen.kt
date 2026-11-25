@@ -3,7 +3,6 @@ package com.blockreels.app.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -23,17 +22,22 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,19 +47,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 import kotlin.math.ceil
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MindfulnessPreviewScreen(
     holdSeconds: Int,
@@ -76,7 +78,11 @@ fun MindfulnessPreviewScreen(
     var unlocked by remember { mutableStateOf(false) }
     var canceledNotice by remember { mutableStateOf(false) }
 
-    val animatedProgress by animateFloatAsState(targetValue = progress, label = "hold_progress")
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "hold_progress"
+    )
 
     LaunchedEffect(isHolding, holdSeconds) {
         if (!isHolding || unlocked) return@LaunchedEffect
@@ -104,10 +110,14 @@ fun MindfulnessPreviewScreen(
 
     Scaffold(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text("Overlay Preview") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                ),
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
@@ -132,7 +142,8 @@ fun MindfulnessPreviewScreen(
                     .widthIn(max = 420.dp),
                 shape = MaterialTheme.shapes.extraLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Column(
@@ -140,28 +151,35 @@ fun MindfulnessPreviewScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
+                    Surface(
+                        modifier = Modifier.size(72.dp),
+                        shape = MaterialShapes.Cookie9Sided.toShape(),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     ) {
-                        Icon(
-                            imageVector = if (unlocked) Icons.Rounded.CheckCircle else Icons.Rounded.SelfImprovement,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(30.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (unlocked) Icons.Rounded.CheckCircle else Icons.Rounded.SelfImprovement,
+                                contentDescription = null,
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
                     }
 
                     val quotaTag = if (dailyPassLimit > 0) " · $dailyPassLimit/day" else ""
-                    Text(
-                        text = if (strictMode) "STRICT BLOCK" else "MINDFUL PAUSE$quotaTag",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = if (strictMode) MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = if (strictMode) MaterialTheme.colorScheme.onErrorContainer
+                        else MaterialTheme.colorScheme.onSecondaryContainer
+                    ) {
+                        Text(
+                            text = if (strictMode) "STRICT BLOCK" else "MINDFUL PAUSE$quotaTag",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                        )
+                    }
 
                     Text(
                         text = when {
@@ -169,7 +187,7 @@ fun MindfulnessPreviewScreen(
                             strictMode -> "Blocked"
                             else -> "Take a Pause"
                         },
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineSmallEmphasized,
                         textAlign = TextAlign.Center
                     )
 
@@ -188,11 +206,11 @@ fun MindfulnessPreviewScreen(
 
                     Button(
                         onClick = onBack,
+                        shapes = ButtonDefaults.shapes(),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("preview_go_back_btn"),
-                        shape = MaterialTheme.shapes.medium
+                            .height(52.dp)
+                            .testTag("preview_go_back_btn")
                     ) {
                         Text(if (unlocked) "Done" else "Go Back")
                     }
@@ -206,11 +224,13 @@ fun MindfulnessPreviewScreen(
                         }
 
                         Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = MaterialTheme.shapes.largeIncreased,
+                            color = if (isHolding) MaterialTheme.colorScheme.secondaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (isHolding) MaterialTheme.colorScheme.onSecondaryContainer
+                            else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(MaterialTheme.shapes.medium)
                                 .pointerInput(holdSeconds) {
                                     awaitEachGesture {
                                         awaitFirstDown(requireUnconsumed = false)
@@ -222,23 +242,21 @@ fun MindfulnessPreviewScreen(
                                 .testTag("preview_hold_surface")
                         ) {
                             Column(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
                                     text = holdLabel,
                                     style = MaterialTheme.typography.labelLarge.copy(
                                         fontFamily = if (isHolding) MonoFontFamily else MaterialTheme.typography.labelLarge.fontFamily
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    )
                                 )
-                                LinearProgressIndicator(
+                                LinearWavyProgressIndicator(
                                     progress = { animatedProgress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(CircleShape)
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
                             }
                         }

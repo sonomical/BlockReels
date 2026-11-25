@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -23,15 +26,19 @@ import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,11 +47,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.data.TargetAppConfig
+import com.blockreels.app.ui.components.ExpressiveCard
+import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.PlatformAvatar
-import com.blockreels.app.ui.components.TonalCard
+import com.blockreels.app.ui.components.segmentedListShape
 import com.blockreels.app.viewmodel.BlockReelsUiState
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun OnboardingScreen(
     uiState: BlockReelsUiState,
@@ -57,26 +67,33 @@ fun OnboardingScreen(
     val pageCount = 3
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
+    val motionScheme = MaterialTheme.motionScheme
 
     Scaffold(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surface,
         bottomBar = {
-            Surface(color = MaterialTheme.colorScheme.background) {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         repeat(pageCount) { idx ->
                             val selected = pagerState.currentPage == idx
+                            val indicatorWidth by animateDpAsState(
+                                targetValue = if (selected) 28.dp else 8.dp,
+                                animationSpec = motionScheme.fastSpatialSpec(),
+                                label = "onboarding_dot_width"
+                            )
                             Box(
                                 modifier = Modifier
+                                    .width(indicatorWidth)
                                     .height(8.dp)
-                                    .size(width = if (selected) 24.dp else 8.dp, height = 8.dp)
                                     .clip(CircleShape)
                                     .background(
                                         if (selected) MaterialTheme.colorScheme.primary
@@ -119,10 +136,10 @@ fun OnboardingScreen(
                                     onFinishOnboarding()
                                 }
                             },
-                            shape = MaterialTheme.shapes.medium,
+                            shapes = ButtonDefaults.shapes(),
                             modifier = Modifier.testTag("onboarding_next_btn")
                         ) {
-                            Text(if (pagerState.currentPage < pageCount - 1) "Next" else "Start")
+                            Text(if (pagerState.currentPage < pageCount - 1) "Next" else "Get Started")
                         }
                     }
                 }
@@ -145,7 +162,7 @@ fun OnboardingScreen(
                 Column(
                     modifier = Modifier.widthIn(max = 520.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     when (page) {
                         0 -> AccessibilityStep(
@@ -167,60 +184,60 @@ fun OnboardingScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AccessibilityStep(
     enabled: Boolean,
     onOpenSettings: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .size(72.dp)
-            .clip(CircleShape)
-            .background(
-                if (enabled) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.tertiaryContainer
-            ),
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier = Modifier.size(88.dp),
+        shape = MaterialShapes.Cookie9Sided.toShape(),
+        color = if (enabled) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onTertiaryContainer
     ) {
-        Icon(
-            imageVector = if (enabled) Icons.Rounded.CheckCircle else Icons.Rounded.AccessibilityNew,
-            contentDescription = null,
-            tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
-            else MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.size(36.dp)
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (enabled) Icons.Rounded.CheckCircle else Icons.Rounded.AccessibilityNew,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp)
+            )
+        }
     }
 
     Text(
         text = "Accessibility Service",
-        style = MaterialTheme.typography.headlineMedium,
+        style = MaterialTheme.typography.headlineMediumEmphasized,
         textAlign = TextAlign.Center
     )
 
-    TonalCard(modifier = Modifier.fillMaxWidth()) {
+    ExpressiveCard(shape = MaterialTheme.shapes.extraLarge) {
         Text(
             text = "BlockReels uses AccessibilityService on-device to detect short-video feeds and trigger your chosen block action. No network permission or data collection.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(20.dp)
         )
     }
 
     if (enabled) {
         Surface(
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
             Text(
                 text = "Enabled",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
             )
         }
     } else {
         FilledTonalButton(
             onClick = onOpenSettings,
+            shapes = ButtonDefaults.shapes(),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("onboarding_accessibility_btn")
@@ -230,29 +247,30 @@ private fun AccessibilityStep(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun BatteryStep(
     ignored: Boolean,
     onOpenSettings: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .size(72.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.secondaryContainer),
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier = Modifier.size(88.dp),
+        shape = MaterialShapes.Sunny.toShape(),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
     ) {
-        Icon(
-            imageVector = if (ignored) Icons.Rounded.CheckCircle else Icons.Rounded.BatteryChargingFull,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.size(36.dp)
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (ignored) Icons.Rounded.CheckCircle else Icons.Rounded.BatteryChargingFull,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp)
+            )
+        }
     }
 
     Text(
         text = "Background Execution",
-        style = MaterialTheme.typography.headlineMedium,
+        style = MaterialTheme.typography.headlineMediumEmphasized,
         textAlign = TextAlign.Center
     )
     Text(
@@ -265,18 +283,19 @@ private fun BatteryStep(
     if (ignored) {
         Surface(
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
             Text(
                 text = "Unrestricted",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
             )
         }
     } else {
         FilledTonalButton(
             onClick = onOpenSettings,
+            shapes = ButtonDefaults.shapes(),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("onboarding_battery_btn")
@@ -286,44 +305,81 @@ private fun BatteryStep(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun TargetAppsStep(
     targets: List<TargetAppConfig>,
     onToggleTarget: (String, Boolean) -> Unit
 ) {
-    Icon(
-        imageVector = Icons.Rounded.Tune,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(36.dp)
-    )
+    Surface(
+        modifier = Modifier.size(76.dp),
+        shape = MaterialShapes.Cookie7Sided.toShape(),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.Tune,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp)
+            )
+        }
+    }
+
     Text(
         text = "Select Targets",
-        style = MaterialTheme.typography.headlineMedium,
+        style = MaterialTheme.typography.headlineMediumEmphasized,
         textAlign = TextAlign.Center
     )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        targets.forEach { target ->
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
+        targets.forEachIndexed { idx, target ->
+            Surface(
+                shape = segmentedListShape(idx, targets.size),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PlatformAvatar(platformKey = target.platformKey, sizeDp = 36)
+                    PlatformAvatar(
+                        platformKey = target.platformKey,
+                        packageName = target.packageName,
+                        sizeDp = 40,
+                        active = target.isEnabled
+                    )
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(target.displayName, style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(target.displayName, style = MaterialTheme.typography.titleSmall)
+                            if (target.isInstalled) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ) {
+                                    Text(
+                                        text = "Installed",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                         Text(
                             target.feedName,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
+                    ExpressiveSwitch(
                         checked = target.isEnabled,
                         onCheckedChange = { onToggleTarget(target.packageName, it) }
                     )
