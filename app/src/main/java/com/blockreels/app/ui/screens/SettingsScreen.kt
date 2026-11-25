@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
 import android.content.ClipData
@@ -8,37 +9,27 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.PlayCircleOutline
-import androidx.compose.material.icons.rounded.Policy
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Vibration
-import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,8 +40,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,32 +53,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.blockreels.app.BuildConfig
 import com.blockreels.app.data.AppThemeMode
-import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.ui.components.AccessibilityDisclosureDialog
 import com.blockreels.app.ui.components.SectionHeader
-import com.blockreels.app.ui.theme.MonoFontFamily
+import com.blockreels.app.ui.components.TonalCard
 import com.blockreels.app.viewmodel.BlockReelsUiState
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     uiState: BlockReelsUiState,
     bottomContentPadding: Dp = 96.dp,
-    onUpdateGlobalMode: (InterventionMode) -> Unit,
-    onUpdateHoldDuration: (Int) -> Unit,
-    onUpdateCustomMessage: (String) -> Unit,
-    onToggleSound: (Boolean) -> Unit,
-    onToggleHaptics: (Boolean) -> Unit,
     onToggleStrictMode: (Boolean) -> Unit,
     onSelectTheme: (AppThemeMode) -> Unit,
     onRequestPinSetup: () -> Unit,
     onRequestDisablePin: () -> Unit,
-    onOpenPreviewOverlay: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
@@ -101,26 +82,22 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showMessageDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showDisclosureDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+    var showLicenseDialog by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 680.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomContentPadding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomContentPadding),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item(key = "privacy_card") {
-                ZeroNetworkPrivacyCard()
-            }
-
             item(key = "appearance_section") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionHeader(title = "Appearance", subtitle = "Material 3 dynamic color surfaces")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(title = "Appearance")
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         AppThemeMode.entries.forEachIndexed { idx, mode ->
                             SegmentedButton(
@@ -139,167 +116,17 @@ fun SettingsScreen(
                 }
             }
 
-            item(key = "friction_section") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionHeader(
-                        title = "Mindful Intervention",
-                        subtitle = "Configure hold friction and feedback"
-                    )
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "Default Intervention Mode",
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                val modes = listOf(
-                                    InterventionMode.AUTO_BACK to "Auto Back",
-                                    InterventionMode.MINDFUL_PAUSE to "Mindful",
-                                    InterventionMode.STRICT_BLOCK to "Strict"
-                                )
-                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                    modes.forEachIndexed { idx, (mode, label) ->
-                                        SegmentedButton(
-                                            selected = uiState.settings.globalMode == mode,
-                                            onClick = { onUpdateGlobalMode(mode) },
-                                            shape = SegmentedButtonDefaults.itemShape(idx, modes.size),
-                                            modifier = Modifier.testTag("settings_global_mode_${mode.name.lowercase()}")
-                                        ) {
-                                            Text(label, maxLines = 1)
-                                        }
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Hold-to-Unlock Duration",
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.primaryContainer
-                                    ) {
-                                        Text(
-                                            text = "${uiState.settings.holdDurationSeconds}s",
-                                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
-                                Slider(
-                                    value = uiState.settings.holdDurationSeconds.toFloat(),
-                                    onValueChange = { onUpdateHoldDuration(it.roundToInt()) },
-                                    valueRange = 3f..15f,
-                                    steps = 11,
-                                    modifier = Modifier.testTag("settings_hold_duration_slider")
-                                )
-                            }
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier
-                                    .clickable { showMessageDialog = true }
-                                    .testTag("settings_custom_message_row"),
-                                leadingContent = { Icon(Icons.Rounded.EditNote, contentDescription = null) },
-                                headlineContent = { Text("Mindful Pause Prompt") },
-                                supportingContent = { Text(uiState.settings.customMessage, maxLines = 2) }
-                            )
-
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                leadingContent = { Icon(Icons.Rounded.VolumeOff, contentDescription = null) },
-                                headlineContent = { Text("Audio Ducking & Mute") },
-                                supportingContent = { Text("Silence auto-playing reels while overlay is visible") },
-                                trailingContent = {
-                                    Switch(
-                                        checked = uiState.settings.soundEnabled,
-                                        onCheckedChange = onToggleSound,
-                                        modifier = Modifier.testTag("settings_sound_switch")
-                                    )
-                                }
-                            )
-
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                leadingContent = { Icon(Icons.Rounded.Vibration, contentDescription = null) },
-                                headlineContent = { Text("Haptic Feedback") },
-                                supportingContent = { Text("Tactile pulse on hold start, cancel, and completion") },
-                                trailingContent = {
-                                    Switch(
-                                        checked = uiState.settings.hapticsEnabled,
-                                        onCheckedChange = onToggleHaptics,
-                                        modifier = Modifier.testTag("settings_haptics_switch")
-                                    )
-                                }
-                            )
-
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier
-                                    .clickable(onClick = onOpenPreviewOverlay)
-                                    .testTag("settings_preview_overlay_row"),
-                                leadingContent = { Icon(Icons.Rounded.PlayCircleOutline, contentDescription = null) },
-                                headlineContent = { Text("Preview Mindful Overlay") },
-                                supportingContent = { Text("Test the hold gesture and pause prompt right now") }
-                            )
-                        }
-                    }
-                }
-            }
-
-            item(key = "security_section") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionHeader(
-                        title = "Security & Anti-Tamper",
-                        subtitle = "Guard settings against impulsive overrides"
-                    )
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        )
-                    ) {
+            item(key = "lock_section") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(title = "Protection Lock")
+                    TonalCard(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 leadingContent = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-                                headlineContent = { Text("PIN Lock Protection") },
+                                headlineContent = { Text("PIN Lock") },
                                 supportingContent = {
-                                    Text(
-                                        if (uiState.settings.pinProtected) "4-digit salted PIN required to disable shield"
-                                        else "Require a PIN before pausing or relaxing rules"
-                                    )
+                                    Text(if (uiState.settings.pinProtected) "4-digit PIN active" else "Off")
                                 },
                                 trailingContent = {
                                     Switch(
@@ -313,13 +140,13 @@ fun SettingsScreen(
                             )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 leadingContent = { Icon(Icons.Rounded.Shield, contentDescription = null) },
-                                headlineContent = { Text("Strict Mode") },
-                                supportingContent = { Text("Remove temporary 5-minute bypasses on all blocked apps") },
+                                headlineContent = { Text("Global Strict Lock") },
+                                supportingContent = { Text("Disable hold-to-pass across all targets") },
                                 trailingContent = {
                                     Switch(
                                         checked = uiState.settings.strictMode,
@@ -333,23 +160,14 @@ fun SettingsScreen(
                 }
             }
 
-            item(key = "system_health_section") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionHeader(
-                        title = "System Permissions & Engine",
-                        subtitle = "Keep background monitoring resilient"
-                    )
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        )
-                    ) {
+            item(key = "permissions_section") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(title = "Permissions")
+                    TonalCard(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             PermissionStatusRow(
-                                title = "Accessibility Shield",
-                                subtitle = if (uiState.systemHealth.accessibilityEnabled) "Connected & monitoring"
-                                else "Required for reel & shorts detection",
+                                title = "Accessibility Service",
+                                status = if (uiState.systemHealth.accessibilityEnabled) "Active" else "Off",
                                 granted = uiState.systemHealth.accessibilityEnabled,
                                 icon = Icons.Rounded.AccessibilityNew,
                                 onClick = { showDisclosureDialog = true },
@@ -357,12 +175,11 @@ fun SettingsScreen(
                             )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                             PermissionStatusRow(
                                 title = "Battery Optimization",
-                                subtitle = if (uiState.systemHealth.batteryOptimizationIgnored) "Unrestricted background execution"
-                                else "Recommended so Android won't kill the shield",
+                                status = if (uiState.systemHealth.batteryOptimizationIgnored) "Unrestricted" else "Restricted",
                                 granted = uiState.systemHealth.batteryOptimizationIgnored,
                                 icon = Icons.Rounded.BatteryChargingFull,
                                 onClick = onOpenBatterySettings,
@@ -370,7 +187,7 @@ fun SettingsScreen(
                             )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -378,41 +195,20 @@ fun SettingsScreen(
                                     .clickable(onClick = onOpenNotificationSettings)
                                     .testTag("settings_notifications_row"),
                                 leadingContent = { Icon(Icons.Rounded.NotificationsActive, contentDescription = null) },
-                                headlineContent = { Text("Monitoring Notification") },
+                                headlineContent = { Text("Notifications") },
                                 supportingContent = {
-                                    Text(
-                                        if (uiState.systemHealth.monitoringServiceRunning) "Foreground service active"
-                                        else "Configure persistent status notification"
-                                    )
+                                    Text(if (uiState.systemHealth.monitoringServiceRunning) "Running" else "Configure")
                                 }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier
-                                    .clickable { showDisclosureDialog = true }
-                                    .testTag("settings_disclosure_row"),
-                                leadingContent = { Icon(Icons.Rounded.Policy, contentDescription = null) },
-                                headlineContent = { Text("Accessibility Disclosure") },
-                                supportingContent = { Text("Review how on-device screen inspection works") }
                             )
                         }
                     }
                 }
             }
 
-            item(key = "data_section") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionHeader(title = "Local Backup & Data", subtitle = "Export or restore rules offline")
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        )
-                    ) {
+            item(key = "backup_section") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(title = "Backup & Reset")
+                    TonalCard(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -421,16 +217,15 @@ fun SettingsScreen(
                                         val json = onExportBackup()
                                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("BlockReels Backup", json))
-                                        onShowMessage("Backup JSON copied to clipboard")
+                                        onShowMessage("Backup JSON copied")
                                     }
                                     .testTag("settings_export_backup_row"),
                                 leadingContent = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
-                                headlineContent = { Text("Export Backup to Clipboard") },
-                                supportingContent = { Text("Copies rules, schedules, and settings as JSON") }
+                                headlineContent = { Text("Export JSON") }
                             )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -438,12 +233,11 @@ fun SettingsScreen(
                                     .clickable { showImportDialog = true }
                                     .testTag("settings_import_backup_row"),
                                 leadingContent = { Icon(Icons.Rounded.Download, contentDescription = null) },
-                                headlineContent = { Text("Import Validated Backup") },
-                                supportingContent = { Text("Paste exported JSON to restore your setup") }
+                                headlineContent = { Text("Import JSON") }
                             )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -451,12 +245,11 @@ fun SettingsScreen(
                                     .clickable(onClick = onReplayOnboarding)
                                     .testTag("settings_replay_onboarding_row"),
                                 leadingContent = { Icon(Icons.Rounded.RestartAlt, contentDescription = null) },
-                                headlineContent = { Text("Replay Setup Wizard") },
-                                supportingContent = { Text("Walk through permissions and app selection again") }
+                                headlineContent = { Text("Setup Wizard") }
                             )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -471,17 +264,30 @@ fun SettingsScreen(
                                     )
                                 },
                                 headlineContent = {
-                                    Text("Clear Interception History", color = MaterialTheme.colorScheme.error)
-                                },
-                                supportingContent = { Text("Reset daily counts and recorded logs") }
+                                    Text("Clear History", color = MaterialTheme.colorScheme.error)
+                                }
                             )
                         }
                     }
                 }
             }
 
+            item(key = "license_section") {
+                TonalCard(modifier = Modifier.fillMaxWidth()) {
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier
+                            .clickable { showLicenseDialog = true }
+                            .testTag("settings_license_row"),
+                        leadingContent = { Icon(Icons.Rounded.Code, contentDescription = null) },
+                        headlineContent = { Text("BlockReels v${BuildConfig.VERSION_NAME}") },
+                        supportingContent = { Text("MIT License · Open Source") }
+                    )
+                }
+            }
+
             item(key = "bottom_pad") {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     }
@@ -496,33 +302,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showMessageDialog) {
-        var draft by remember { mutableStateOf(uiState.settings.customMessage) }
-        AlertDialog(
-            onDismissRequest = { showMessageDialog = false },
-            title = { Text("Mindful Pause Prompt") },
-            text = {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    label = { Text("Overlay Message") },
-                    minLines = 2,
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onUpdateCustomMessage(draft)
-                    showMessageDialog = false
-                }) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showMessageDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
     if (showImportDialog) {
         var jsonInput by remember { mutableStateOf("") }
         AlertDialog(
@@ -532,7 +311,7 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = jsonInput,
                     onValueChange = { jsonInput = it },
-                    label = { Text("Paste JSON Backup") },
+                    label = { Text("JSON") },
                     minLines = 4,
                     maxLines = 8,
                     modifier = Modifier.fillMaxWidth()
@@ -554,8 +333,8 @@ fun SettingsScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Interception History?") },
-            text = { Text("All local interception counts and logs will be reset to zero.") },
+            title = { Text("Clear history?") },
+            text = { Text("All local counts and logs will be reset.") },
             confirmButton = {
                 TextButton(onClick = {
                     showClearDialog = false
@@ -567,47 +346,32 @@ fun SettingsScreen(
             }
         )
     }
-}
 
-@Composable
-private fun ZeroNetworkPrivacyCard() {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.CloudOff,
-                contentDescription = "Zero network privacy",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(30.dp)
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    if (showLicenseDialog) {
+        AlertDialog(
+            onDismissRequest = { showLicenseDialog = false },
+            title = { Text("MIT License") },
+            text = {
                 Text(
-                    text = "Zero-Network Privacy Guarantee",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    "Copyright (c) 2026 BlockReels Contributors\n\n" +
+                        "Permission is hereby granted, free of charge, to any person obtaining a copy " +
+                        "of this software and associated documentation files, to deal in the Software " +
+                        "without restriction, including without limitation the rights to use, copy, " +
+                        "modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.\n\n" +
+                        "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND."
                 )
-                Text(
-                    text = "INTERNET permission is absent from this APK. All detection, schedules, and analytics execute 100% locally on your device.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f)
-                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showLicenseDialog = false }) { Text("Close") }
             }
-        }
+        )
     }
 }
 
 @Composable
 private fun PermissionStatusRow(
     title: String,
-    subtitle: String,
+    status: String,
     granted: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
@@ -620,11 +384,11 @@ private fun PermissionStatusRow(
             .testTag(tag),
         leadingContent = { Icon(icon, contentDescription = null) },
         headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
+        supportingContent = { Text(status) },
         trailingContent = {
             Icon(
                 imageVector = if (granted) Icons.Rounded.CheckCircle else Icons.Rounded.WarningAmber,
-                contentDescription = if (granted) "Granted" else "Action needed",
+                contentDescription = status,
                 tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
             )
         }

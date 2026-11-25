@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app
 
 import android.accessibilityservice.AccessibilityService
@@ -10,10 +11,13 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.blockreels.app.detection.AppPlatform
+import com.blockreels.app.detection.DetectionConfidence
+import com.blockreels.app.detection.DetectionLayer
 import com.blockreels.app.detection.DetectionResult
 import com.blockreels.app.detection.DetectorRegistry
 import com.blockreels.app.detection.FacebookDetector
 import com.blockreels.app.detection.InstagramDetector
+import com.blockreels.app.detection.SnapchatDetector
 import com.blockreels.app.detection.TikTokDetector
 import com.blockreels.app.detection.YouTubeDetector
 import com.blockreels.app.engine.DetectionTrace
@@ -26,6 +30,7 @@ import com.blockreels.app.intervention.InterventionConfigResolver
 import com.blockreels.app.intervention.InterventionController
 import com.blockreels.app.intervention.TikTokPlaybackPause
 import com.blockreels.app.model.RealAccessibilityNode
+import com.blockreels.app.state.BlockingScope
 import com.blockreels.app.state.NativeEventBus
 import com.blockreels.app.state.NativeStateStore
 import kotlinx.coroutines.CancellationException
@@ -51,6 +56,25 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             service.interventionController.grantTemporaryAllowance(packageName, durationMs)
             return true
         }
+
+        fun getActiveAllowancesRemainingMs(): Map<String, Long> {
+            val service = activeInstance ?: return emptyMap()
+            return service.interventionController.getActiveAllowancesRemainingMs()
+        }
+
+        fun revokeTemporaryAllowance(packageName: String): Boolean {
+            val service = activeInstance ?: return false
+            val revoked = service.interventionController.revokeTemporaryAllowance(packageName)
+            if (revoked) {
+                service.onAllowanceRevoked(packageName)
+            }
+            return revoked
+        }
+
+        fun revokeAllAllowances() {
+            val service = activeInstance ?: return
+            service.interventionController.revokeAllAllowances()
+        }
     }
 
     private lateinit var detectorRegistry: DetectorRegistry
@@ -70,6 +94,8 @@ class BlockReelsAccessibilityService : AccessibilityService() {
     private var exitCheck: Job? = null
     private var entryCheck: ViewerScreenRecheck? = null
     private var entryPackage: String? = null
+    private var graceDelayJob: Job? = null
+    private var graceDelayPackage: String? = null
 
     private data class Signal(
         val pkg: String?,
@@ -77,7 +103,8 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         val time: Long? = null,
         val window: Int? = null,
         val received: Long = SystemClock.uptimeMillis(),
-        val followUp: Boolean = false
+        val followUp: Boolean = false,
+        val graceConfirmed: Boolean = false
     )
 
     private data class Screen(
@@ -107,6 +134,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             onFeedLeft = { pkg ->
                 scans.invalidate()
                 cancelEntryCheck()
+                cancelGraceDelay()
                 cancelOverlayCheck()
                 leaveCheck?.cancel()
                 leaveCheck = serviceScope.launch {
@@ -120,12 +148,23 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             onAllowanceGranted = { pkg ->
                 scans.invalidate()
                 cancelEntryCheck()
+                cancelGraceDelay()
                 if (foregroundPackage == pkg) checkAtAllowanceExpiry(pkg)
             }
         )
         audioHandler.post { interventionController.audioDuckingManager.recoverMediaMute() }
         scans = ScreenScanQueue(serviceScope, Dispatchers.IO, ::readScreen, ::applyScreen)
         activeInstance = this
+    }
+
+    private fun onAllowanceRevoked(packageName: String) {
+        screenHandler.post {
+            cancelAllowanceCheck()
+            if (foregroundPackage == packageName) {
+                scans.invalidate()
+                scans.submit(Signal(packageName))
+            }
+        }
     }
 
     override fun onServiceConnected() {
@@ -158,6 +197,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
         if (!windowEvent && AppPlatform.fromPackageName(pkg) == null) return
         val signal = Signal(pkg, type, event.eventTime, event.windowId)
+        val sensitivityWindowMs = NativeStateStore.getInterventionConfig().sensitivity.debounceWindowMs
         if (windowEvent) {
             val window = pkg to event.windowId
             val focusChanged = type == AccessibilityEvent.TYPE_WINDOWS_CHANGED &&
@@ -174,7 +214,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             if (type == AccessibilityEvent.TYPE_VIEW_CLICKED) {
                 scans.invalidate()
                 cancelEntryCheck()
-            } else if (!eventThrottler.shouldProcess(pkg, type, false)) {
+            } else if (!eventThrottler.shouldProcess(pkg, type, false, windowMs = sensitivityWindowMs)) {
                 requestEntryCheck(signal)
                 return
             }
@@ -186,6 +226,27 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         entryCheck?.cancel()
         entryCheck = null
         entryPackage = null
+    }
+
+    private fun cancelGraceDelay() {
+        graceDelayJob?.cancel()
+        graceDelayJob = null
+        graceDelayPackage = null
+    }
+
+    private fun scheduleGraceDelay(packageName: String, delaySeconds: Int) {
+        if (graceDelayPackage == packageName && graceDelayJob?.isActive == true) return
+        cancelGraceDelay()
+        graceDelayPackage = packageName
+        graceDelayJob = serviceScope.launch {
+            delay(delaySeconds * 1000L)
+            graceDelayJob = null
+            graceDelayPackage = null
+            if (foregroundPackage == packageName) {
+                scans.invalidate()
+                scans.submit(Signal(packageName, followUp = true, graceConfirmed = true))
+            }
+        }
     }
 
     private fun requestEntryCheck(signal: Signal) {
@@ -210,6 +271,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         if (foregroundPackage != pkg) {
             leaveCheck?.cancel()
             if (pkg != entryPackage) cancelEntryCheck()
+            if (pkg != graceDelayPackage) cancelGraceDelay()
             cancelOverlayCheck()
             cancelAllowanceCheck()
             foregroundPackage = pkg
@@ -363,6 +425,23 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             trace.blockingActive = NativeStateStore.isAppBlockingActive(pkg)
             trace.temporarilyAllowed = interventionController.isAppTemporarilyAllowed(pkg)
             if (!trace.blockingActive || trace.temporarilyAllowed) return Screen(trace)
+
+            val rule = NativeStateStore.getRule(pkg)
+            val activeSchedule = NativeStateStore.findActiveSchedule(pkg)
+            val scope = InterventionConfigResolver.resolveScope(rule, activeSchedule)
+            if (scope == BlockingScope.ENTIRE_APP) {
+                trace.detectionCompletedUptimeMs = SystemClock.uptimeMillis()
+                return Screen(
+                    trace,
+                    DetectionResult.positive(
+                        platform = detector.platform,
+                        confidence = DetectionConfidence.DEFINITIVE,
+                        layer = DetectionLayer.ACTIVITY_OR_WINDOW_NAME,
+                        identifier = "ENTIRE_APP_BLOCK"
+                    )
+                )
+            }
+
             val sample = if (DetectionTrace.enabled) mutableListOf<DetectionTrace.NodeSummary>() else null
             val observer: ((com.blockreels.app.model.AccessibilityNode, Int) -> Unit)? = sample?.let {
                 { item, depth ->
@@ -375,14 +454,21 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             val engine = if (detector is FacebookDetector) {
                 TraversalEngine(maxBudget = 320, isCurrent = isCurrent)
             } else TraversalEngine(isCurrent = isCurrent)
-            val result = when (detector) {
+            val rawResult = when (detector) {
                 is InstagramDetector -> detector.evaluateWithTrace(node, engine, observer) {
                     trace.evidenceUptimeMs = SystemClock.uptimeMillis()
                 }
                 is YouTubeDetector -> detector.evaluateWithTrace(node, null, engine, observer)
                 is FacebookDetector -> detector.evaluateWithTrace(node, engine, observer, isCurrent)
                 is TikTokDetector -> detector.evaluateWithTrace(node, engine, observer)
+                is SnapchatDetector -> detector.evaluateWithTrace(node, engine, observer)
                 else -> detector.evaluate(node, null, engine)
+            }
+            val sensitivity = NativeStateStore.getInterventionConfig().sensitivity
+            val result = if (rawResult.isMatch && rawResult.confidence.score < sensitivity.minConfidenceScore) {
+                DetectionResult.negative(detector.platform, rawResult.stats)
+            } else {
+                rawResult
             }
             trace.detectionCompletedUptimeMs = SystemClock.uptimeMillis()
             if (!isCurrent()) return Screen(trace)
@@ -421,11 +507,13 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         if (!NativeStateStore.isAppBlockingActive(pkg)) {
             if (interventionController.hasInterventionFor(pkg)) interventionController.dismissOverlay()
             cancelEntryCheck()
+            cancelGraceDelay()
             cancelAllowanceCheck()
             return
         }
         if (interventionController.isAppTemporarilyAllowed(pkg)) {
             cancelEntryCheck()
+            cancelGraceDelay()
             checkAtAllowanceExpiry(pkg)
             return
         }
@@ -435,14 +523,22 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             return
         }
         if (result != null) {
+            val activeSchedule = NativeStateStore.findActiveSchedule(pkg)
             val config = InterventionConfigResolver.resolve(
-                NativeStateStore.getInterventionConfig(),
-                NativeStateStore.getRule(pkg)
+                base = NativeStateStore.getInterventionConfig(),
+                rule = NativeStateStore.getRule(pkg),
+                activeSchedule = activeSchedule
             )
             trace.ruleMode = config.mode.name
             DetectionTrace.pipeline(trace, DetectionTrace.Stage.DETECTED, result, traversalEngine)
             if (result.isMatch) {
                 cancelEntryCheck()
+                val graceSeconds = config.entryDelaySeconds.coerceIn(0, 10)
+                if (graceSeconds > 0 && !signal.graceConfirmed && !interventionController.hasInterventionFor(pkg)) {
+                    scheduleGraceDelay(pkg, graceSeconds)
+                    return
+                }
+                cancelGraceDelay()
                 if (interventionController.executeIntervention(pkg, config, windowId = window, evaluationId = trace.id)) {
                     NativeStateStore.recordBlockEvent(pkg, result.layerMatched?.name ?: "REEL_CONTAINER_MATCH", config.mode)
                     DetectionTrace.pipeline(trace, DetectionTrace.Stage.INTERVENTION, result, traversalEngine)
@@ -450,6 +546,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
                 scheduleOverlayCheck(pkg)
                 return
             }
+            cancelGraceDelay()
             interventionController.onScreenEvaluated(pkg, result)
         }
         if (!signal.followUp && !interventionController.hasInterventionFor(pkg)) {
@@ -473,6 +570,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         exitCheck?.cancel()
         leaveCheck?.cancel()
         cancelEntryCheck()
+        cancelGraceDelay()
         cancelAllowanceCheck()
         cancelOverlayCheck()
         interventionController.dismissOverlay()

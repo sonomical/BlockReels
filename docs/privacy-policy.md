@@ -1,9 +1,21 @@
-# BlockReels local privacy policy
+# BlockReels Local Privacy Policy
 
-BlockReels operates offline. It has no accounts, analytics or remote services and transmits no screen information, settings or activity records.
+BlockReels operates strictly offline. The APK does not declare `android.permission.INTERNET`, has no accounts or telemetry, and never transmits screen data, settings, or activity records off-device.
 
-Android Accessibility supplies window events for supported Instagram, YouTube, Facebook and TikTok/Douyin packages, including supported regional versions. When protection applies, BlockReels inspects app/window identity, screen structure, view bounds/types, resource identifiers, text and accessibility descriptions. These can include captions or other content shown in those apps. Detection processes this information in memory to distinguish short-video feeds from ordinary app areas such as messages and profiles. Your chosen intervention performs Android Back/Home navigation or shows a blocking/mindful-pause overlay.
+## Accessibility Service Data Handling
 
-New activity records store event IDs, times, app/packages, intervention modes, fixed diagnostic codes, estimates and outcome flags. They do not store captions, accessibility text or screen trees. Pending block events are stored locally until delivered to history. Older history may contain legacy detection descriptions and remains readable until cleared. Rules, schedules, allowed apps, preferences, PIN hashes/salts and lockout state also remain in local app storage.
+Android Accessibility delivers window events for enabled target packages (Instagram, YouTube, TikTok/Douyin, Facebook, and Snapchat). When protection is active:
 
-An explicit agreement is required before the app opens Accessibility settings; cancelling opens nothing. You can skip setup, choose protected apps/schedules, disable the service in Android settings, clear recorded history in Insights, or remove app data. Clearing removes pending events as well; daily counters are retained. Optional backups copy configuration to the device clipboard, excluding PIN credentials and activity history; BlockReels does not transmit them. This policy is bundled in the app's Accessibility disclosure and Settings privacy card.
+- In **Feed Only** scope, BlockReels inspects window identity, view hierarchy structure, bounds, resource IDs, text, and content descriptions strictly in memory to distinguish short-video feeds (Reels, Shorts, TikTok, Spotlight) from ordinary areas such as messages, profiles, search, and long-form videos.
+- In **Full App** scope, BlockReels matches the foreground package name without deep feed inspection.
+- Based on your configuration, BlockReels triggers Android Back navigation, Home navigation, or an on-device blocking/mindful-pause overlay.
+
+## Local Storage
+
+- Activity logs record event IDs, timestamps, app package labels, intervention modes, and fixed diagnostic codes. Captions, typed text, messages, and view trees are never persisted.
+- Rules, engine parameters, schedules, daily pass counters, preferences, and salted PBKDF2-SHA256 PIN hashes are stored locally in Android DataStore / SharedPreferences.
+- Optional JSON backups copy configuration (rules, engine parameters, and schedules) to the device clipboard; PIN credentials and activity logs are excluded.
+
+## User Control
+
+An explicit disclosure confirmation is required before opening Android Accessibility Settings. You can disable the Accessibility service at any time in Android Settings, clear local activity history in-app, or remove all stored data via Android App Info.

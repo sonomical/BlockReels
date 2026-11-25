@@ -70,11 +70,12 @@ val SurfaceContainerDark = Color(0xFF1A2220)
 val SurfaceContainerHighDark = Color(0xFF242C2A)
 val SurfaceContainerHighestDark = Color(0xFF2F3735)
 
-// Platform Brand Accent Tokens (subtle, harmonious indicators)
+// Platform Brand Accent Tokens
 val BrandInstagram = Color(0xFFD93175)
 val BrandYouTube = Color(0xFFD93025)
 val BrandTikTok = Color(0xFF00A699)
 val BrandFacebook = Color(0xFF1877F2)
+val BrandSnapchat = Color(0xFFC99A00)
 
 val BlockReelsLightColorScheme = lightColorScheme(
     primary = EmeraldPrimaryLight,

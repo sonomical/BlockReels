@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
 import androidx.compose.animation.animateColorAsState
@@ -7,6 +8,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,26 +25,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.TimerOff
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -65,19 +60,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.blockreels.app.data.ActiveAllowanceItem
 import com.blockreels.app.data.HistoryRecord
 import com.blockreels.app.data.ProtectionStatus
 import com.blockreels.app.data.ScheduleItem
 import com.blockreels.app.data.TargetAppConfig
+import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.ui.components.AccessibilityDisclosureDialog
 import com.blockreels.app.ui.components.ModeBadge
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.SectionHeader
+import com.blockreels.app.ui.components.TonalCard
 import com.blockreels.app.ui.components.formatDurationMinutes
 import com.blockreels.app.ui.components.formatRelativeTime
 import com.blockreels.app.ui.theme.MonoFontFamily
@@ -89,11 +89,11 @@ fun DashboardScreen(
     bottomContentPadding: Dp = 96.dp,
     onToggleMaster: (Boolean) -> Unit,
     onToggleTargetApp: (String, Boolean) -> Unit,
-    onStartQuickBoost: (Int) -> Unit,
+    onStartQuickBoost: (Int, InterventionMode) -> Unit,
     onCancelQuickBoost: () -> Unit,
+    onRevokeAllowance: (String) -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
-    onOpenPreviewOverlay: () -> Unit,
-    onNavigateToApps: () -> Unit,
+    onNavigateToEngine: () -> Unit,
     onNavigateToStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -114,18 +114,25 @@ fun DashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 680.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomContentPadding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomContentPadding),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item(key = "hero_status") {
                 ProtectionHeroCard(
-                    status = uiState.protectionStatus,
-                    masterEnabled = uiState.settings.masterEnabled,
-                    enabledAppsCount = uiState.enabledTargetsCount,
-                    strictMode = uiState.settings.strictMode,
+                    uiState = uiState,
                     onToggleMaster = onToggleMaster,
-                    onEnableAccessibilityClick = { showDisclosure = true }
+                    onEnableAccessibilityClick = { showDisclosure = true },
+                    onTuneEngineClick = onNavigateToEngine
                 )
+            }
+
+            if (uiState.activeAllowances.isNotEmpty()) {
+                item(key = "active_passes") {
+                    ActivePassesStrip(
+                        allowances = uiState.activeAllowances,
+                        onRevoke = onRevokeAllowance
+                    )
+                }
             }
 
             item(key = "kpi_row") {
@@ -137,7 +144,7 @@ fun DashboardScreen(
             }
 
             item(key = "quick_boost") {
-                QuickBoostSection(
+                QuickLockSection(
                     activeBoost = uiState.activeQuickBoost,
                     nowMillis = uiState.nowMillis,
                     onStartBoost = onStartQuickBoost,
@@ -146,31 +153,23 @@ fun DashboardScreen(
             }
 
             item(key = "quick_toggles") {
-                QuickAppTogglesSection(
-                    targets = uiState.targets.take(4),
+                GuardedTargetsGrid(
+                    targets = uiState.targets.take(6),
                     onToggleTarget = onToggleTargetApp,
-                    onSeeAllClick = onNavigateToApps
-                )
-            }
-
-            item(key = "mindful_preview_card") {
-                MindfulPreviewBanner(
-                    holdSeconds = uiState.settings.holdDurationSeconds,
-                    onPreviewClick = onOpenPreviewOverlay
+                    onConfigureClick = onNavigateToEngine
                 )
             }
 
             item(key = "recent_header") {
                 SectionHeader(
-                    title = "Recent Interceptions",
-                    subtitle = "100% on-device detection log",
+                    title = "Recent Activity",
                     trailing = {
                         if (uiState.history.isNotEmpty()) {
                             TextButton(
                                 onClick = onNavigateToStats,
                                 modifier = Modifier.testTag("dashboard_view_all_stats_btn")
                             ) {
-                                Text("Insights")
+                                Text("All")
                             }
                         }
                     }
@@ -179,31 +178,40 @@ fun DashboardScreen(
 
             if (uiState.history.isEmpty()) {
                 item(key = "empty_recent") {
-                    EmptyInterceptionsCard(
-                        accessibilityEnabled = uiState.systemHealth.accessibilityEnabled
-                    )
+                    TonalCard {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.VerifiedUser,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "No interceptions recorded yet.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             } else {
                 item(key = "recent_list_card") {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        ),
-                        shape = MaterialTheme.shapes.large
-                    ) {
+                    TonalCard {
                         val recent = uiState.history.take(5)
-                        Column {
-                            recent.forEachIndexed { index, record ->
-                                RecentInterceptionRow(
-                                    record = record,
-                                    nowMillis = uiState.nowMillis
+                        recent.forEachIndexed { index, record ->
+                            RecentInterceptionRow(
+                                record = record,
+                                nowMillis = uiState.nowMillis
+                            )
+                            if (index < recent.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                                 )
-                                if (index < recent.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                    )
-                                }
                             }
                         }
                     }
@@ -211,7 +219,7 @@ fun DashboardScreen(
             }
 
             item(key = "bottom_spacer") {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
@@ -219,13 +227,14 @@ fun DashboardScreen(
 
 @Composable
 private fun ProtectionHeroCard(
-    status: ProtectionStatus,
-    masterEnabled: Boolean,
-    enabledAppsCount: Int,
-    strictMode: Boolean,
+    uiState: BlockReelsUiState,
     onToggleMaster: (Boolean) -> Unit,
-    onEnableAccessibilityClick: () -> Unit
+    onEnableAccessibilityClick: () -> Unit,
+    onTuneEngineClick: () -> Unit
 ) {
+    val status = uiState.protectionStatus
+    val settings = uiState.settings
+
     val containerColor by animateColorAsState(
         targetValue = when (status) {
             ProtectionStatus.PROTECTED -> MaterialTheme.colorScheme.primaryContainer
@@ -247,7 +256,7 @@ private fun ProtectionHeroCard(
         val infiniteTransition = rememberInfiniteTransition(label = "shield_pulse")
         infiniteTransition.animateFloat(
             initialValue = 1f,
-            targetValue = 1.07f,
+            targetValue = 1.06f,
             animationSpec = infiniteRepeatable(
                 animation = tween(1800, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
@@ -256,16 +265,16 @@ private fun ProtectionHeroCard(
         ).value
     } else 1f
 
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("dashboard_protection_hero_card"),
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = containerColor)
+        color = containerColor
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -274,7 +283,7 @@ private fun ProtectionHeroCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(50.dp)
                         .graphicsLayer {
                             scaleX = pulseScale
                             scaleY = pulseScale
@@ -289,46 +298,35 @@ private fun ProtectionHeroCard(
                             ProtectionStatus.PAUSED -> Icons.Rounded.PauseCircle
                             ProtectionStatus.PERMISSION_NEEDED -> Icons.Rounded.WarningAmber
                         },
-                        contentDescription = "Protection status icon",
+                        contentDescription = null,
                         tint = contentColor,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
-                    val badgeText = when (status) {
-                        ProtectionStatus.PROTECTED -> if (strictMode) "STRICT LOCK ACTIVE" else "SHIELD ACTIVE"
-                        ProtectionStatus.PAUSED -> "SHIELD PAUSED"
-                        ProtectionStatus.PERMISSION_NEEDED -> "SETUP REQUIRED"
-                    }
-                    Text(
-                        text = badgeText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor.copy(alpha = 0.85f),
-                        fontWeight = FontWeight.Bold
-                    )
                     Text(
                         text = when (status) {
-                            ProtectionStatus.PROTECTED -> "Focus Protected"
-                            ProtectionStatus.PAUSED -> "Protection Paused"
-                            ProtectionStatus.PERMISSION_NEEDED -> "Enable Accessibility"
+                            ProtectionStatus.PROTECTED -> if (settings.strictMode) "Strict Lock Active" else "Shield Active"
+                            ProtectionStatus.PAUSED -> "Shield Paused"
+                            ProtectionStatus.PERMISSION_NEEDED -> "Accessibility Required"
                         },
                         style = MaterialTheme.typography.headlineSmall,
                         color = contentColor
                     )
                     Text(
                         text = when (status) {
-                            ProtectionStatus.PROTECTED -> "Guarding $enabledAppsCount short-form feeds locally"
-                            ProtectionStatus.PAUSED -> "Short-video feeds are currently unrestricted"
-                            ProtectionStatus.PERMISSION_NEEDED -> "Grant Accessibility permission to detect Reels & Shorts"
+                            ProtectionStatus.PROTECTED -> "${uiState.enabledTargetsCount} targets guarded"
+                            ProtectionStatus.PAUSED -> "Blocking disabled"
+                            ProtectionStatus.PERMISSION_NEEDED -> "Enable service to start"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = contentColor.copy(alpha = 0.85f)
+                        color = contentColor.copy(alpha = 0.8f)
                     )
                 }
 
                 Switch(
-                    checked = masterEnabled,
+                    checked = settings.masterEnabled,
                     onCheckedChange = onToggleMaster,
                     modifier = Modifier.testTag("dashboard_master_switch")
                 )
@@ -352,7 +350,87 @@ private fun ProtectionHeroCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Activate Accessibility Shield")
+                    Text("Enable Accessibility")
+                }
+            } else {
+                val activeMode = if (settings.strictMode) InterventionMode.STRICT_BLOCK else settings.globalMode
+                val quotaLabel = if (settings.dailyPassLimit > 0) "${settings.dailyPassLimit}/day cap" else "No pass cap"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(contentColor.copy(alpha = 0.08f))
+                        .clickable(onClick = onTuneEngineClick)
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${activeMode.displayName} · ${settings.sensitivity.displayName} · $quotaLabel",
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                        color = contentColor.copy(alpha = 0.92f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Tune",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivePassesStrip(
+    allowances: List<ActiveAllowanceItem>,
+    onRevoke: (String) -> Unit
+) {
+    TonalCard(
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f),
+        borderColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "Active Passes",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            allowances.forEach { pass ->
+                val remMin = (pass.remainingMillis / 60_000L).coerceAtLeast(1L)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    PlatformAvatar(platformKey = pass.platformKey, sizeDp = 32)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = pass.appLabel,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${remMin}m left",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = { onRevoke(pass.packageName) }) {
+                        Icon(
+                            imageVector = Icons.Rounded.TimerOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("End")
+                    }
                 }
             }
         }
@@ -370,21 +448,21 @@ private fun KpiMetricsRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         KpiTile(
-            label = "Blocked Today",
+            label = "Blocked",
             value = blocksToday.toString(),
             icon = Icons.Rounded.Shield,
             iconTint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f)
         )
         KpiTile(
-            label = "Time Saved",
+            label = "Saved",
             value = formatDurationMinutes(minutesSavedToday),
             icon = Icons.Rounded.Schedule,
             iconTint = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.weight(1f)
         )
         KpiTile(
-            label = "Focus Streak",
+            label = "Streak",
             value = "${streakDays}d",
             icon = Icons.Rounded.LocalFireDepartment,
             iconTint = MaterialTheme.colorScheme.tertiary,
@@ -397,26 +475,25 @@ private fun KpiMetricsRow(
 private fun KpiTile(
     label: String,
     value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     iconTint: Color,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
+    Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = iconTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
             Text(
                 text = value,
@@ -428,24 +505,54 @@ private fun KpiTile(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 1
             )
         }
     }
 }
 
 @Composable
-private fun QuickBoostSection(
+private fun QuickLockSection(
     activeBoost: ScheduleItem?,
     nowMillis: Long,
-    onStartBoost: (Int) -> Unit,
+    onStartBoost: (Int, InterventionMode) -> Unit,
     onCancelBoost: () -> Unit
 ) {
+    var selectedBoostMode by remember { mutableStateOf(InterventionMode.STRICT_BLOCK) }
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(
-            title = "Quick Focus Boost",
-            subtitle = "Lock down all short-video feeds immediately"
+            title = "Focus Lock",
+            trailing = if (activeBoost == null) {
+                {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            InterventionMode.STRICT_BLOCK to "Strict",
+                            InterventionMode.REDIRECT_HOME to "Home",
+                            InterventionMode.MINDFUL_PAUSE to "Mindful"
+                        ).forEach { (mode, label) ->
+                            val active = selectedBoostMode == mode
+                            Surface(
+                                shape = CircleShape,
+                                color = if (active) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable { selectedBoostMode = mode }
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (active) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else null
         )
 
         if (activeBoost != null) {
@@ -473,8 +580,8 @@ private fun QuickBoostSection(
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                         Text(
-                            text = "$remainingMin min remaining · All feeds guarded",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "${remainingMin}m remaining · ${(activeBoost.modeOverride ?: InterventionMode.STRICT_BLOCK).displayName}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
                             color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
                         )
                     }
@@ -484,28 +591,34 @@ private fun QuickBoostSection(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Cancel Focus Boost",
+                            contentDescription = "End Focus Lock",
                             tint = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
                 }
             }
         } else {
-            val presets = listOf(30 to "30 min", 60 to "1 hour", 120 to "2 hours")
+            val presets = listOf(15 to "15m", 30 to "30m", 60 to "1h", 120 to "2h")
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 presets.forEach { (minutes, label) ->
                     FilterChip(
                         selected = false,
-                        onClick = { onStartBoost(minutes) },
-                        label = { Text(label) },
+                        onClick = { onStartBoost(minutes, selectedBoostMode) },
+                        label = {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
+                                maxLines = 1
+                            )
+                        },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Bolt,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         },
                         colors = FilterChipDefaults.filterChipColors(
@@ -522,138 +635,83 @@ private fun QuickBoostSection(
 }
 
 @Composable
-private fun QuickAppTogglesSection(
+private fun GuardedTargetsGrid(
     targets: List<TargetAppConfig>,
     onToggleTarget: (String, Boolean) -> Unit,
-    onSeeAllClick: () -> Unit
+    onConfigureClick: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(
-            title = "Guarded Feeds",
-            subtitle = "Selective blocking keeps messages & regular video open",
+            title = "Targets",
             trailing = {
                 TextButton(
-                    onClick = onSeeAllClick,
+                    onClick = onConfigureClick,
                     modifier = Modifier.testTag("dashboard_manage_apps_btn")
                 ) {
-                    Text("Configure")
+                    Text("Engine")
                 }
             }
         )
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(targets, key = { it.packageName }) { target ->
-                val container = if (target.isEnabled) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                }
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = container,
-                    modifier = Modifier
-                        .width(136.dp)
-                        .clip(MaterialTheme.shapes.large)
-                        .clickable { onToggleTarget(target.packageName, !target.isEnabled) }
-                        .testTag("quick_toggle_${target.platformKey.lowercase()}")
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+        targets.chunked(2).forEach { rowTargets ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowTargets.forEach { target ->
+                    val enabled = target.isEnabled
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                        else MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(MaterialTheme.shapes.large)
+                            .clickable { onToggleTarget(target.packageName, !enabled) }
+                            .testTag("quick_toggle_${target.packageName}")
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             PlatformAvatar(platformKey = target.platformKey, sizeDp = 36)
-                            Surface(
-                                shape = CircleShape,
-                                color = if (target.isEnabled) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                }
-                            ) {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (target.isEnabled) "ON" else "OFF",
+                                    text = target.displayName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (target.scope == BlockingScope.ENTIRE_APP) "Full App" else target.feedName,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (target.isEnabled) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-                        }
-                        Column {
-                            Text(
-                                text = target.displayName,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = target.feedName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (enabled) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outlineVariant
+                                    )
                             )
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MindfulPreviewBanner(
-    holdSeconds: Int,
-    onPreviewClick: () -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.SelfImprovement,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Mindful Pause Friction",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Requires a ${holdSeconds}s intentional hold before allowing a 5m pass.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            FilledTonalButton(
-                onClick = onPreviewClick,
-                modifier = Modifier.testTag("dashboard_preview_overlay_btn")
-            ) {
-                Text("Test")
+                if (rowTargets.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
     }
@@ -667,7 +725,7 @@ private fun RecentInterceptionRow(
     ListItem(
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
-            PlatformAvatar(platformKey = record.platformKey, sizeDp = 40)
+            PlatformAvatar(platformKey = record.platformKey, sizeDp = 38)
         },
         headlineContent = {
             Text(
@@ -685,43 +743,7 @@ private fun RecentInterceptionRow(
             )
         },
         trailingContent = {
-            ModeBadge(mode = record.interventionMode)
+            ModeBadge(mode = record.interventionMode, compact = true)
         }
     )
-}
-
-@Composable
-private fun EmptyInterceptionsCard(accessibilityEnabled: Boolean) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.VerifiedUser,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp)
-            )
-            Text(
-                text = if (accessibilityEnabled) "Calm waters so far" else "Ready to protect your focus",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = if (accessibilityEnabled) {
-                    "When you open Reels, Shorts, or TikTok, BlockReels will intercept them and log your saved time here."
-                } else {
-                    "Activate the Accessibility Shield above or tap Test on Mindful Pause to preview how interventions feel."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
 }

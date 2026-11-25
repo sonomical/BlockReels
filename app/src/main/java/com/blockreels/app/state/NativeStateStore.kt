@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.state
 
 import android.content.Context
@@ -12,11 +13,11 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -36,24 +37,68 @@ import java.util.concurrent.atomic.AtomicReference
 
 enum class InterventionMode {
     AUTO_BACK,
+    REDIRECT_HOME,
     MINDFUL_PAUSE,
     STRICT_BLOCK;
 
     val displayName: String
         get() = when (this) {
             AUTO_BACK -> "Auto Back"
+            REDIRECT_HOME -> "Home Exit"
             MINDFUL_PAUSE -> "Mindful Pause"
             STRICT_BLOCK -> "Strict Block"
         }
+
+    val shortLabel: String
+        get() = when (this) {
+            AUTO_BACK -> "Back"
+            REDIRECT_HOME -> "Home"
+            MINDFUL_PAUSE -> "Mindful"
+            STRICT_BLOCK -> "Strict"
+        }
+}
+
+enum class BlockingScope {
+    FEED_ONLY,
+    ENTIRE_APP;
+
+    val displayName: String
+        get() = when (this) {
+            FEED_ONLY -> "Feed Only"
+            ENTIRE_APP -> "Full App"
+        }
+}
+
+enum class DetectionSensitivity(
+    val displayName: String,
+    val minConfidenceScore: Double,
+    val debounceWindowMs: Long,
+    val specLabel: String
+) {
+    CONSERVATIVE("Conservative", 1.0, 150L, "Definitive IDs · 150ms"),
+    BALANCED("Balanced", 0.85, 75L, "High+ confidence · 75ms"),
+    AGGRESSIVE("Aggressive", 0.65, 40L, "Medium+ · 40ms")
+}
+
+enum class AudioAction(val displayName: String) {
+    SILENCE("Silence"),
+    DUCK("Duck"),
+    NONE("Off")
 }
 
 data class InterventionConfig(
-    val mode: InterventionMode = InterventionMode.AUTO_BACK,
+    val mode: InterventionMode = InterventionMode.MINDFUL_PAUSE,
     val holdDurationSeconds: Int = 5,
-    val customMessage: String = "Take a deep breath.",
+    val customMessage: String = "Take a deep breath. Do you really want to scroll right now?",
     val soundEnabled: Boolean = true,
     val hapticsEnabled: Boolean = true,
-    val pinProtected: Boolean = false
+    val pinProtected: Boolean = false,
+    val allowanceMinutes: Int = 5,
+    val dailyPassLimit: Int = 0, // 0 = Unlimited
+    val entryDelaySeconds: Int = 0,
+    val sensitivity: DetectionSensitivity = DetectionSensitivity.BALANCED,
+    val audioAction: AudioAction = AudioAction.SILENCE,
+    val strictMode: Boolean = false
 )
 
 data class ScheduleRule(
@@ -63,7 +108,9 @@ data class ScheduleRule(
     val daysOfWeek: Set<Int>, // ISO-8601: 1 = Monday, ..., 7 = Sunday
     val startMinuteOfDay: Int, // 0 to 1439
     val endMinuteOfDay: Int,   // 0 to 1439
-    val enabledPackages: Set<String>
+    val enabledPackages: Set<String>,
+    val modeOverride: InterventionMode? = null,
+    val scopeOverride: BlockingScope? = null
 ) {
     fun isTimeActive(
         currentIsoDay: Int,
@@ -108,7 +155,10 @@ data class RuleConfig(
     val packageName: String,
     val isEnabled: Boolean,
     val mode: InterventionMode,
-    val holdDurationSeconds: Int
+    val holdDurationSeconds: Int? = null,
+    val scope: BlockingScope = BlockingScope.FEED_ONLY,
+    val allowanceMinutes: Int? = null,
+    val dailyPassLimit: Int? = null
 )
 
 val Context.appDataStore by preferencesDataStore(name = "blockreels_state")
@@ -134,6 +184,7 @@ object NativeStateStore {
 
     private val totalBlockedToday = AtomicInteger(0)
     private val blockedByApp = ConcurrentHashMap<String, AtomicInteger>()
+    private val passesUsedByApp = ConcurrentHashMap<String, AtomicInteger>()
     private val lastBlockedPackage = AtomicReference("")
     private val lastBlockedTimestamp = AtomicLong(0L)
     private val serviceStartTime = AtomicLong(System.currentTimeMillis())
@@ -149,10 +200,17 @@ object NativeStateStore {
     private val KEY_SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
     private val KEY_HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
     private val KEY_PIN_PROTECTED = booleanPreferencesKey("pin_protected")
+    private val KEY_ALLOWANCE_MINUTES = intPreferencesKey("allowance_minutes")
+    private val KEY_DAILY_PASS_LIMIT = intPreferencesKey("daily_pass_limit")
+    private val KEY_ENTRY_DELAY_SECONDS = intPreferencesKey("entry_delay_seconds")
+    private val KEY_SENSITIVITY = stringPreferencesKey("detection_sensitivity")
+    private val KEY_AUDIO_ACTION = stringPreferencesKey("audio_action")
+    private val KEY_STRICT_MODE = booleanPreferencesKey("strict_mode")
     private val KEY_SCHEDULES_JSON = stringPreferencesKey("schedules_json")
     private val KEY_RULES_JSON = stringPreferencesKey("rules_json")
     private val KEY_METRICS_TOTAL = intPreferencesKey("metrics_total_today")
     private val KEY_METRICS_BY_APP = stringPreferencesKey("metrics_by_app_json")
+    private val KEY_PASSES_BY_APP = stringPreferencesKey("passes_by_app_json")
     private val KEY_METRICS_DATE = stringPreferencesKey("metrics_date")
 
     init {
@@ -168,6 +226,7 @@ object NativeStateStore {
         appToggles["com.ss.android.ugc.trill"] = false
         appToggles["com.ss.android.ugc.aweme"] = false
         appToggles["com.ss.android.ugc.aweme.lite"] = false
+        appToggles["com.snapchat.android"] = false
     }
 
     fun initialize(context: Context): Deferred<Unit> {
@@ -193,16 +252,35 @@ object NativeStateStore {
                         }
                     }
 
-                    val modeStr = prefs[KEY_INTERVENTION_MODE] ?: "AUTO_BACK"
-                    val mode = try { InterventionMode.valueOf(modeStr) } catch (_: Exception) { InterventionMode.AUTO_BACK }
-                    val holdSec = prefs[KEY_HOLD_DURATION] ?: 5
+                    val mode = parseInterventionMode(prefs[KEY_INTERVENTION_MODE])
+                    val holdSec = (prefs[KEY_HOLD_DURATION] ?: 5).coerceIn(3, 30)
                     val customMsg = prefs[KEY_CUSTOM_MESSAGE] ?: "Take a deep breath."
-                    val sound = prefs[KEY_SOUND_ENABLED] ?: InterventionConfig().soundEnabled
+                    val sound = prefs[KEY_SOUND_ENABLED] ?: true
                     val haptics = prefs[KEY_HAPTICS_ENABLED] ?: true
                     val pin = prefs[KEY_PIN_PROTECTED] ?: false
+                    val allowanceMin = (prefs[KEY_ALLOWANCE_MINUTES] ?: 5).coerceIn(1, 30)
+                    val passLimit = (prefs[KEY_DAILY_PASS_LIMIT] ?: 0).coerceIn(0, 10)
+                    val entryDelay = (prefs[KEY_ENTRY_DELAY_SECONDS] ?: 0).coerceIn(0, 10)
+                    val sensitivity = parseSensitivity(prefs[KEY_SENSITIVITY])
+                    val audioAction = prefs[KEY_AUDIO_ACTION]?.let(::parseAudioAction)
+                        ?: if (sound) AudioAction.SILENCE else AudioAction.NONE
+                    val strictMode = prefs[KEY_STRICT_MODE] ?: false
 
                     interventionConfig.set(
-                        InterventionConfig(mode, holdSec, customMsg, sound, haptics, pin)
+                        InterventionConfig(
+                            mode = mode,
+                            holdDurationSeconds = holdSec,
+                            customMessage = customMsg,
+                            soundEnabled = audioAction != AudioAction.NONE,
+                            hapticsEnabled = haptics,
+                            pinProtected = pin,
+                            allowanceMinutes = allowanceMin,
+                            dailyPassLimit = passLimit,
+                            entryDelaySeconds = entryDelay,
+                            sensitivity = sensitivity,
+                            audioAction = audioAction,
+                            strictMode = strictMode
+                        )
                     )
 
                     prefs[KEY_SCHEDULES_JSON]?.let { jsonStr ->
@@ -220,8 +298,13 @@ object NativeStateStore {
                         prefs[KEY_METRICS_BY_APP]?.let { jsonStr ->
                             val obj = JSONObject(jsonStr)
                             obj.keys().forEach { pkg ->
-                                blockedByApp[pkg] =
-                                    AtomicInteger(obj.optInt(pkg, 0))
+                                blockedByApp[pkg] = AtomicInteger(obj.optInt(pkg, 0))
+                            }
+                        }
+                        prefs[KEY_PASSES_BY_APP]?.let { jsonStr ->
+                            val obj = JSONObject(jsonStr)
+                            obj.keys().forEach { pkg ->
+                                passesUsedByApp[pkg] = AtomicInteger(obj.optInt(pkg, 0))
                             }
                         }
                     } else {
@@ -242,7 +325,7 @@ object NativeStateStore {
         write: suspend (DataStore<Preferences>) -> Unit
     ) {
         val completion = if (context != null) initialize(context)
-            else checkNotNull(initialization) { "Native state has not been initialized" }
+        else checkNotNull(initialization) { "Native state has not been initialized" }
         completion.await()
         stateMutex.withLock {
             withContext(Dispatchers.IO) { write(checkNotNull(preferencesStore)) }
@@ -268,20 +351,24 @@ object NativeStateStore {
         resetMetrics()
     }
 
-    fun isAppBlockingActive(packageName: String): Boolean {
-        if (!isReady() || !masterEnabled.get()) return false
-
-        val calendar = Calendar.getInstance()
+    fun findActiveSchedule(packageName: String, nowMillis: Long = System.currentTimeMillis()): ScheduleRule? {
+        val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
         val currentIsoDay = calendarIsoDay(calendar)
         val previousIsoDay = if (currentIsoDay == 1) 7 else currentIsoDay - 1
         val currentMinute =
             calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
 
-        val scheduleActive = schedules.get().any {
-            it.isTimeActive(currentIsoDay, previousIsoDay, currentMinute, packageName)
+        val active = schedules.get().filter {
+            it.isTimeActive(currentIsoDay, previousIsoDay, currentMinute, packageName, nowMillis)
         }
-        if (scheduleActive) return true
+        // Quick Focus Boost takes precedence over recurring schedules if both overlap.
+        return active.firstOrNull { it.id.startsWith(ScheduleRule.QUICK_BOOST_ID_PREFIX) }
+            ?: active.firstOrNull()
+    }
 
+    fun isAppBlockingActive(packageName: String): Boolean {
+        if (!isReady() || !masterEnabled.get()) return false
+        if (findActiveSchedule(packageName) != null) return true
         return appToggles[packageName] ?: false
     }
 
@@ -294,6 +381,31 @@ object NativeStateStore {
     fun getSchedules(): List<ScheduleRule> = schedules.get()
 
     fun getRule(packageName: String): RuleConfig? = rules[packageName]
+
+    fun getPassesUsedToday(packageName: String): Int {
+        resetMetricsIfNewDay()
+        return passesUsedByApp[packageName]?.get() ?: 0
+    }
+
+    fun getAllPassesUsedToday(): Map<String, Int> {
+        resetMetricsIfNewDay()
+        return passesUsedByApp.mapValues { it.value.get() }
+    }
+
+    fun recordTemporaryPassUsed(packageName: String): Int {
+        resetMetricsIfNewDay()
+        val count = passesUsedByApp.computeIfAbsent(packageName) { AtomicInteger(0) }.incrementAndGet()
+        persistMetrics()
+        eventBroadcaster?.invoke(
+            mapOf(
+                "eventType" to "PASS_GRANTED",
+                "packageName" to packageName,
+                "passesUsedToday" to count,
+                "timestamp" to System.currentTimeMillis()
+            )
+        )
+        return count
+    }
 
     fun recordBlockEvent(
         packageName: String,
@@ -371,8 +483,19 @@ object NativeStateStore {
         haptics: Boolean,
         pinProtected: Boolean
     ) = writeState(context) { store ->
-        val newConfig = InterventionConfig(mode, holdSec, customMsg,
-            sound ?: interventionConfig.get().soundEnabled, haptics, pinProtected)
+        val current = interventionConfig.get()
+        val resolvedSound = sound ?: current.soundEnabled
+        val resolvedAudio = if (!resolvedSound) AudioAction.NONE
+        else if (current.audioAction == AudioAction.NONE) AudioAction.SILENCE else current.audioAction
+        val newConfig = current.copy(
+            mode = mode,
+            holdDurationSeconds = holdSec.coerceIn(3, 30),
+            customMessage = customMsg,
+            soundEnabled = resolvedSound,
+            hapticsEnabled = haptics,
+            pinProtected = pinProtected,
+            audioAction = resolvedAudio
+        )
         store.edit { prefs -> prefs.putInterventionConfig(newConfig) }
         interventionConfig.set(newConfig)
     }
@@ -381,9 +504,15 @@ object NativeStateStore {
         this[KEY_INTERVENTION_MODE] = config.mode.name
         this[KEY_HOLD_DURATION] = config.holdDurationSeconds
         this[KEY_CUSTOM_MESSAGE] = config.customMessage
-        this[KEY_SOUND_ENABLED] = config.soundEnabled
+        this[KEY_SOUND_ENABLED] = config.audioAction != AudioAction.NONE
         this[KEY_HAPTICS_ENABLED] = config.hapticsEnabled
         this[KEY_PIN_PROTECTED] = config.pinProtected
+        this[KEY_ALLOWANCE_MINUTES] = config.allowanceMinutes
+        this[KEY_DAILY_PASS_LIMIT] = config.dailyPassLimit
+        this[KEY_ENTRY_DELAY_SECONDS] = config.entryDelaySeconds
+        this[KEY_SENSITIVITY] = config.sensitivity.name
+        this[KEY_AUDIO_ACTION] = config.audioAction.name
+        this[KEY_STRICT_MODE] = config.strictMode
     }
 
     fun setSchedulesInMemory(ruleList: List<ScheduleRule>) {
@@ -443,6 +572,10 @@ object NativeStateStore {
         val startMinute = (map["startMinute"] as? Number)?.toInt() ?: 0
         val endHour = (map["endHour"] as? Number)?.toInt() ?: 23
         val endMinute = (map["endMinute"] as? Number)?.toInt() ?: 59
+        val modeOverride = (map["modeOverride"] as? String)?.takeIf { it.isNotBlank() }
+            ?.let(::parseInterventionMode)
+        val scopeOverride = (map["scopeOverride"] as? String)?.takeIf { it.isNotBlank() }
+            ?.let(::parseBlockingScope)
         return ScheduleRule(
             id = id,
             title = map["title"] as? String ?: "Schedule",
@@ -451,7 +584,9 @@ object NativeStateStore {
                 ?.mapNotNull { (it as? Number)?.toInt() }?.toSet() ?: emptySet(),
             startMinuteOfDay = startHour * 60 + startMinute,
             endMinuteOfDay = endHour * 60 + endMinute,
-            enabledPackages = (packages as? List<*>)?.filterIsInstance<String>()?.toSet() ?: emptySet()
+            enabledPackages = (packages as? List<*>)?.filterIsInstance<String>()?.toSet() ?: emptySet(),
+            modeOverride = modeOverride,
+            scopeOverride = scopeOverride
         )
     }
 
@@ -460,19 +595,51 @@ object NativeStateStore {
         val modeStr = (map["interventionMode"] as? String)
             ?: (map["mode"] as? String)
         val mode = parseInterventionMode(modeStr)
+        val scope = parseBlockingScope(map["scope"] as? String)
+        val holdSec = (map["holdDurationSeconds"] as? Number)?.toInt()?.takeIf { it in 3..30 }
+        val allowanceMin = (map["allowanceMinutes"] as? Number)?.toInt()?.takeIf { it in 1..30 }
+        val dailyLimit = (map["dailyPassLimit"] as? Number)?.toInt()?.takeIf { it in 0..10 }
         return RuleConfig(
             packageName = packageName,
             isEnabled = map["isEnabled"] as? Boolean ?: true,
             mode = mode,
-            holdDurationSeconds = (map["holdDurationSeconds"] as? Number)?.toInt() ?: 7
+            holdDurationSeconds = holdSec,
+            scope = scope,
+            allowanceMinutes = allowanceMin,
+            dailyPassLimit = dailyLimit
         )
     }
 
-    private fun parseInterventionMode(value: String?): InterventionMode {
+    fun parseInterventionMode(value: String?): InterventionMode {
         return when (value?.uppercase()?.replace("_", "")) {
             "MINDFULPAUSE", "MINDFUL" -> InterventionMode.MINDFUL_PAUSE
             "STRICTBLOCK", "STRICT" -> InterventionMode.STRICT_BLOCK
-            else -> InterventionMode.AUTO_BACK
+            "REDIRECTHOME", "HOMEEXIT", "HOME" -> InterventionMode.REDIRECT_HOME
+            "AUTOBACK", "BACK" -> InterventionMode.AUTO_BACK
+            else -> InterventionMode.MINDFUL_PAUSE
+        }
+    }
+
+    fun parseBlockingScope(value: String?): BlockingScope {
+        return when (value?.uppercase()?.replace("_", "")) {
+            "ENTIREAPP", "FULLAPP", "WHOLEAPP" -> BlockingScope.ENTIRE_APP
+            else -> BlockingScope.FEED_ONLY
+        }
+    }
+
+    fun parseSensitivity(value: String?): DetectionSensitivity {
+        return when (value?.uppercase()) {
+            "CONSERVATIVE" -> DetectionSensitivity.CONSERVATIVE
+            "AGGRESSIVE" -> DetectionSensitivity.AGGRESSIVE
+            else -> DetectionSensitivity.BALANCED
+        }
+    }
+
+    fun parseAudioAction(value: String?): AudioAction {
+        return when (value?.uppercase()) {
+            "DUCK" -> AudioAction.DUCK
+            "NONE", "OFF" -> AudioAction.NONE
+            else -> AudioAction.SILENCE
         }
     }
 
@@ -496,6 +663,7 @@ object NativeStateStore {
     fun resetMetrics() {
         totalBlockedToday.set(0)
         blockedByApp.clear()
+        passesUsedByApp.clear()
         lastBlockedPackage.set("")
         lastBlockedTimestamp.set(0L)
         metricsDate.set(currentDateKey())
@@ -507,6 +675,7 @@ object NativeStateStore {
         if (metricsDate.get() != today) {
             totalBlockedToday.set(0)
             blockedByApp.clear()
+            passesUsedByApp.clear()
             lastBlockedPackage.set("")
             lastBlockedTimestamp.set(0L)
             metricsDate.set(today)
@@ -523,10 +692,13 @@ object NativeStateStore {
                     val date = metricsDate.get()
                     val byApp = JSONObject()
                     blockedByApp.forEach { (pkg, count) -> byApp.put(pkg, count.get()) }
+                    val passesByApp = JSONObject()
+                    passesUsedByApp.forEach { (pkg, count) -> passesByApp.put(pkg, count.get()) }
                     store.edit { prefs ->
                         prefs[KEY_METRICS_TOTAL] = total
                         prefs[KEY_METRICS_DATE] = date
                         prefs[KEY_METRICS_BY_APP] = byApp.toString()
+                        prefs[KEY_PASSES_BY_APP] = passesByApp.toString()
                     }
                 }
             } catch (e: Exception) {
@@ -565,19 +737,22 @@ object NativeStateStore {
                 val startM = obj.optInt("startMinute", 0)
                 val endH = obj.optInt("endHour", 23)
                 val endM = obj.optInt("endMinute", 59)
+                val modeOverride = obj.optString("modeOverride", "").takeIf { it.isNotBlank() }
+                    ?.let(::parseInterventionMode)
+                val scopeOverride = obj.optString("scopeOverride", "").takeIf { it.isNotBlank() }
+                    ?.let(::parseBlockingScope)
 
                 list.add(
                     ScheduleRule(
                         id = obj.getString("id"),
-                        title = obj.optString(
-                            "title",
-                            obj.optString("name", "Schedule")
-                        ),
+                        title = obj.optString("title", obj.optString("name", "Schedule")),
                         isActive = obj.optBoolean("isActive", true),
                         daysOfWeek = days,
                         startMinuteOfDay = startH * 60 + startM,
                         endMinuteOfDay = endH * 60 + endM,
-                        enabledPackages = pkgs
+                        enabledPackages = pkgs,
+                        modeOverride = modeOverride,
+                        scopeOverride = scopeOverride
                     )
                 )
             }
@@ -594,7 +769,9 @@ object NativeStateStore {
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 val map = mutableMapOf<String, Any>()
-                obj.keys().forEach { key -> map[key] = obj.get(key) }
+                obj.keys().forEach { key ->
+                    if (!obj.isNull(key)) map[key] = obj.get(key)
+                }
                 parseRule(map)?.let { parsed.add(it) }
             }
             rules.clear()
@@ -609,6 +786,7 @@ object NativeStateStore {
         "com.google.android.youtube" -> "YOUTUBE"
         "com.facebook.katana", "com.facebook.lite" -> "FACEBOOK"
         "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.ss.android.ugc.aweme", "com.ss.android.ugc.aweme.lite" -> "TIKTOK"
+        "com.snapchat.android" -> "SNAPCHAT"
         else -> "UNKNOWN"
     }
 }

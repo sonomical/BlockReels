@@ -14,7 +14,13 @@ class EventThrottler(val debounceWindowMs: Long = 75L,
         return shouldProcess(packageName, event.eventType, isOverlayActive, monotonicNowMs())
     }
 
-    fun shouldProcess(packageName: String, eventType: Int, isOverlayActive: Boolean, timestamp: Long = monotonicNowMs()): Boolean {
+    fun shouldProcess(
+        packageName: String,
+        eventType: Int,
+        isOverlayActive: Boolean,
+        timestamp: Long = monotonicNowMs(),
+        windowMs: Long = debounceWindowMs
+    ): Boolean {
         if (isOverlayActive) return false
 
         if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -27,7 +33,7 @@ class EventThrottler(val debounceWindowMs: Long = 75L,
             eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
             eventType == AccessibilityEvent.TYPE_VIEW_SELECTED) {
             val lastTime = lastEvaluationTimes[packageName]
-            if (lastTime == null || timestamp - lastTime >= debounceWindowMs) {
+            if (lastTime == null || timestamp - lastTime >= windowMs) {
                 lastEvaluationTimes[packageName] = timestamp
                 return true
             }

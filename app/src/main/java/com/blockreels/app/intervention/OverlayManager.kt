@@ -38,6 +38,8 @@ interface InterventionOverlay {
         isStrictMode: Boolean,
         allowanceMinutes: Int,
         hapticsEnabled: Boolean,
+        dailyPassLimit: Int = 0,
+        passesUsedToday: Int = 0,
         onExitRequested: () -> Unit,
         onUnlocked: () -> Unit,
         onDismissed: () -> Unit,
@@ -111,6 +113,8 @@ class OverlayManager(private val context: Context) : InterventionOverlay {
         isStrictMode: Boolean,
         allowanceMinutes: Int,
         hapticsEnabled: Boolean,
+        dailyPassLimit: Int,
+        passesUsedToday: Int,
         onExitRequested: () -> Unit,
         onUnlocked: () -> Unit,
         onDismissed: () -> Unit,
@@ -189,14 +193,23 @@ class OverlayManager(private val context: Context) : InterventionOverlay {
 
             if (isStrictMode) {
                 holdSection?.visibility = View.GONE
-                tvEyebrow?.text = "FOCUS LOCK"
-                tvMessage?.text = context.getString(R.string.strict_mode_active)
+                val quotaLocked = dailyPassLimit > 0 && passesUsedToday >= dailyPassLimit
+                tvEyebrow?.text = if (quotaLocked) "DAILY LIMIT" else "FOCUS LOCK"
+                tvMessage?.text = if (quotaLocked) {
+                    context.getString(R.string.quota_exhausted_message)
+                } else {
+                    context.getString(R.string.strict_mode_active)
+                }
             } else {
                 holdSection?.visibility = View.VISIBLE
                 tvEyebrow?.text = "MINDFUL PAUSE"
                 tvHoldText?.text = "Hold for ${holdSeconds}s"
+                val quotaSuffix = if (dailyPassLimit > 0) {
+                    val remaining = (dailyPassLimit - passesUsedToday).coerceAtLeast(0)
+                    " · $remaining of $dailyPassLimit passes left today"
+                } else ""
                 tvHoldHelp?.text =
-                    "Keep holding for ${holdSeconds}s to allow this app for ${allowanceMinutes} minutes. Release early to cancel."
+                    "Hold ${holdSeconds}s for a ${allowanceMinutes}m pass$quotaSuffix"
                 if (pbProgress != null && tvHoldText != null) {
                     setupHoldTouchListener(
                         tvHoldText, pbProgress, holdSeconds, allowanceMinutes,

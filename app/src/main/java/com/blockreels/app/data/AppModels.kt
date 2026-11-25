@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.data
 
 import androidx.compose.runtime.Immutable
+import com.blockreels.app.state.AudioAction
+import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionMode
 
 enum class AppThemeMode(val label: String) {
@@ -17,9 +21,9 @@ enum class ProtectionStatus {
 }
 
 enum class StatsRange(val label: String, val days: Int?) {
-    WEEK("7 Days", 7),
-    MONTH("30 Days", 30),
-    ALL("All Time", null)
+    WEEK("7D", 7),
+    MONTH("30D", 30),
+    ALL("All", null)
 }
 
 @Immutable
@@ -30,8 +34,18 @@ data class TargetAppConfig(
     val platformKey: String,
     val isEnabled: Boolean,
     val mode: InterventionMode,
+    val scope: BlockingScope = BlockingScope.FEED_ONLY,
+    val holdDurationOverride: Int? = null,
+    val allowanceMinutesOverride: Int? = null,
+    val dailyPassLimitOverride: Int? = null,
     val isInstalled: Boolean = true
-)
+) {
+    val hasCustomOverrides: Boolean
+        get() = scope != BlockingScope.FEED_ONLY ||
+            holdDurationOverride != null ||
+            allowanceMinutesOverride != null ||
+            dailyPassLimitOverride != null
+}
 
 @Immutable
 data class ScheduleItem(
@@ -44,6 +58,8 @@ data class ScheduleItem(
     val endHour: Int,
     val endMinute: Int,
     val enabledPackages: Set<String>,
+    val modeOverride: InterventionMode? = null,
+    val scopeOverride: BlockingScope? = null,
     val isQuickBoost: Boolean = false,
     val expiresAtMillis: Long? = null
 ) {
@@ -67,10 +83,23 @@ data class HistoryRecord(
 )
 
 @Immutable
+data class ActiveAllowanceItem(
+    val packageName: String,
+    val appLabel: String,
+    val platformKey: String,
+    val remainingMillis: Long
+)
+
+@Immutable
 data class AppSettingsState(
     val masterEnabled: Boolean = true,
     val globalMode: InterventionMode = InterventionMode.MINDFUL_PAUSE,
     val holdDurationSeconds: Int = 5,
+    val allowanceMinutes: Int = 5,
+    val dailyPassLimit: Int = 0, // 0 = Unlimited
+    val entryDelaySeconds: Int = 0, // 0 = Instant
+    val sensitivity: DetectionSensitivity = DetectionSensitivity.BALANCED,
+    val audioAction: AudioAction = AudioAction.SILENCE,
     val customMessage: String = "Take a deep breath. Do you really want to scroll right now?",
     val soundEnabled: Boolean = true,
     val hapticsEnabled: Boolean = true,
@@ -140,7 +169,7 @@ object SupportedTargets {
         TargetAppConfig(
             packageName = "com.zhiliaoapp.musically",
             displayName = "TikTok",
-            feedName = "For You Feed",
+            feedName = "For You",
             platformKey = "TIKTOK",
             isEnabled = true,
             mode = InterventionMode.MINDFUL_PAUSE
@@ -150,6 +179,14 @@ object SupportedTargets {
             displayName = "Facebook",
             feedName = "Reels",
             platformKey = "FACEBOOK",
+            isEnabled = false,
+            mode = InterventionMode.MINDFUL_PAUSE
+        ),
+        TargetAppConfig(
+            packageName = "com.snapchat.android",
+            displayName = "Snapchat",
+            feedName = "Spotlight",
+            platformKey = "SNAPCHAT",
             isEnabled = false,
             mode = InterventionMode.MINDFUL_PAUSE
         ),
@@ -164,7 +201,15 @@ object SupportedTargets {
         TargetAppConfig(
             packageName = "com.ss.android.ugc.trill",
             displayName = "TikTok (Global)",
-            feedName = "For You Feed",
+            feedName = "For You",
+            platformKey = "TIKTOK",
+            isEnabled = false,
+            mode = InterventionMode.MINDFUL_PAUSE
+        ),
+        TargetAppConfig(
+            packageName = "com.ss.android.ugc.aweme",
+            displayName = "Douyin",
+            feedName = "Short Video",
             platformKey = "TIKTOK",
             isEnabled = false,
             mode = InterventionMode.MINDFUL_PAUSE
@@ -178,6 +223,7 @@ object SupportedTargets {
             packageName.contains("instagram") -> "Instagram Reels"
             packageName.contains("youtube") -> "YouTube Shorts"
             packageName.contains("facebook") -> "Facebook Reels"
+            packageName.contains("snapchat") -> "Snapchat Spotlight"
             packageName.contains("musically") || packageName.contains("ugc") -> "TikTok"
             else -> packageName
         }
@@ -188,6 +234,7 @@ object SupportedTargets {
             packageName.contains("instagram") -> "INSTAGRAM"
             packageName.contains("youtube") -> "YOUTUBE"
             packageName.contains("facebook") -> "FACEBOOK"
+            packageName.contains("snapchat") -> "SNAPCHAT"
             packageName.contains("musically") || packageName.contains("ugc") -> "TIKTOK"
             else -> "OTHER"
         }
@@ -198,6 +245,7 @@ object SupportedTargets {
         "YOUTUBE" -> "YouTube Shorts"
         "TIKTOK" -> "TikTok"
         "FACEBOOK" -> "Facebook Reels"
+        "SNAPCHAT" -> "Snapchat Spotlight"
         else -> "Short Video"
     }
 }

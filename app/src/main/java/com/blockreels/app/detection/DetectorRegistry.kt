@@ -4,7 +4,8 @@ class DetectorRegistry(
     val instagramDetector: InstagramDetector = InstagramDetector(),
     val youtubeDetector: YouTubeDetector = YouTubeDetector(),
     val facebookDetector: FacebookDetector = FacebookDetector(),
-    val tiktokDetector: TikTokDetector = TikTokDetector()
+    val tiktokDetector: TikTokDetector = TikTokDetector(),
+    val snapchatDetector: SnapchatDetector = SnapchatDetector()
 ) {
     private val detectorsByPackage = mutableMapOf<String, AppDetector>()
 
@@ -13,6 +14,7 @@ class DetectorRegistry(
         register(youtubeDetector)
         register(facebookDetector)
         register(tiktokDetector)
+        register(snapchatDetector)
     }
 
     fun register(detector: AppDetector) {

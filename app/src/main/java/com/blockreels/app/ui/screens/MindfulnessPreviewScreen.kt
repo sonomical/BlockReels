@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
 import androidx.activity.compose.BackHandler
@@ -58,6 +59,8 @@ import kotlin.math.ceil
 @Composable
 fun MindfulnessPreviewScreen(
     holdSeconds: Int,
+    allowanceMinutes: Int,
+    dailyPassLimit: Int,
     customMessage: String,
     strictMode: Boolean,
     hapticsEnabled: Boolean,
@@ -133,13 +136,13 @@ fun MindfulnessPreviewScreen(
                 )
             ) {
                 Column(
-                    modifier = Modifier.padding(28.dp),
+                    modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(56.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
@@ -148,22 +151,23 @@ fun MindfulnessPreviewScreen(
                             imageVector = if (unlocked) Icons.Rounded.CheckCircle else Icons.Rounded.SelfImprovement,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(30.dp)
                         )
                     }
 
+                    val quotaTag = if (dailyPassLimit > 0) " · $dailyPassLimit/day" else ""
                     Text(
-                        text = if (strictMode) "FOCUS LOCK" else "MINDFUL PAUSE",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = if (strictMode) "STRICT BLOCK" else "MINDFUL PAUSE$quotaTag",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
 
                     Text(
                         text = when {
-                            unlocked -> "5-Minute Pass Granted"
-                            strictMode -> "Feed Blocked"
-                            else -> "Take a Mindful Pause"
+                            unlocked -> "${allowanceMinutes}m Pass Granted"
+                            strictMode -> "Blocked"
+                            else -> "Take a Pause"
                         },
                         style = MaterialTheme.typography.headlineSmall,
                         textAlign = TextAlign.Center
@@ -171,8 +175,8 @@ fun MindfulnessPreviewScreen(
 
                     Text(
                         text = when {
-                            unlocked -> "You completed the intentional hold. In live mode, the feed would unlock for 5 minutes."
-                            strictMode -> "Strict Mode is active. Hold-to-unlock bypasses are disabled."
+                            unlocked -> "Temporary pass active for $allowanceMinutes min."
+                            strictMode -> "Passes disabled in Strict mode."
                             else -> customMessage
                         },
                         style = MaterialTheme.typography.bodyMedium,
@@ -186,19 +190,19 @@ fun MindfulnessPreviewScreen(
                         onClick = onBack,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
+                            .height(48.dp)
                             .testTag("preview_go_back_btn"),
                         shape = MaterialTheme.shapes.medium
                     ) {
-                        Text(if (unlocked) "Return to App" else "Go Back to Focus")
+                        Text(if (unlocked) "Done" else "Go Back")
                     }
 
                     if (!strictMode && !unlocked) {
                         val remainingSec = ceil((1f - progress) * holdSeconds).toInt().coerceAtLeast(1)
                         val holdLabel = when {
-                            isHolding -> "Keep holding · ${remainingSec}s"
-                            canceledNotice -> "Released early · Hold for ${holdSeconds}s"
-                            else -> "Hold for ${holdSeconds}s to allow 5 min"
+                            isHolding -> "Hold · ${remainingSec}s"
+                            canceledNotice -> "Released early · ${holdSeconds}s"
+                            else -> "Hold ${holdSeconds}s for ${allowanceMinutes}m pass"
                         }
 
                         Surface(
@@ -220,7 +224,7 @@ fun MindfulnessPreviewScreen(
                             Column(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
                                     text = holdLabel,

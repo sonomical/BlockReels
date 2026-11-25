@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
 import androidx.compose.foundation.background
@@ -18,19 +19,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
@@ -64,6 +64,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.data.ScheduleItem
 import com.blockreels.app.data.TargetAppConfig
+import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.InterventionMode
+import com.blockreels.app.ui.components.ModeBadge
+import com.blockreels.app.ui.components.ScopeBadge
+import com.blockreels.app.ui.components.TonalCard
 import com.blockreels.app.ui.theme.MonoFontFamily
 import com.blockreels.app.viewmodel.BlockReelsUiState
 import java.util.UUID
@@ -102,7 +107,7 @@ fun SchedulesScreen(
                     showEditorSheet = true
                 },
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("New Schedule") },
+                text = { Text("New") },
                 modifier = Modifier
                     .padding(bottom = (bottomContentPadding - 16.dp).coerceAtLeast(0.dp))
                     .testTag("schedules_add_fab")
@@ -122,10 +127,10 @@ fun SchedulesScreen(
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = 12.dp,
+                    top = 8.dp,
                     bottom = bottomContentPadding + 72.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 uiState.activeQuickBoost?.let { boost ->
                     item(key = "active_boost") {
@@ -137,7 +142,7 @@ fun SchedulesScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.padding(16.dp),
+                                modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
@@ -146,17 +151,19 @@ fun SchedulesScreen(
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
                                     Text(
-                                        text = "${boost.title} Active",
+                                        text = "${boost.title} · ${remainingMin}m left",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
-                                    Text(
-                                        text = "$remainingMin min remaining across all apps",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        boost.modeOverride?.let { ModeBadge(mode = it, compact = true) }
+                                        boost.scopeOverride?.let { ScopeBadge(scope = it) }
+                                    }
                                 }
                                 IconButton(
                                     onClick = onCancelQuickBoost,
@@ -164,7 +171,7 @@ fun SchedulesScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Cancel Quick Boost",
+                                        contentDescription = "Cancel Focus Lock",
                                         tint = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
@@ -175,51 +182,65 @@ fun SchedulesScreen(
 
                 if (uiState.regularSchedules.isEmpty()) {
                     item(key = "empty_schedules") {
-                        Surface(
-                            shape = MaterialTheme.shapes.extraLarge,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                        TonalCard(modifier = Modifier.fillMaxWidth()) {
                             Column(
-                                modifier = Modifier.padding(28.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CalendarMonth,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(40.dp)
-                                )
                                 Text(
-                                    text = "No Focus Schedules Yet",
+                                    text = "No schedules",
                                     style = MaterialTheme.typography.titleMedium
                                 )
-                                Text(
-                                    text = "Create recurring quiet hours (like Deep Work 09:00–17:00 or Sleep Wind-Down 22:30–07:00) to enforce blocking automatically.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                FilledTonalButton(
-                                    onClick = {
-                                        onUpsertSchedule(
-                                            ScheduleItem(
-                                                id = UUID.randomUUID().toString(),
-                                                title = "Deep Work",
-                                                isActive = true,
-                                                daysOfWeek = setOf(1, 2, 3, 4, 5),
-                                                startHour = 9,
-                                                startMinute = 0,
-                                                endHour = 17,
-                                                endMinute = 0,
-                                                enabledPackages = uiState.targets.map { it.packageName }.toSet()
-                                            )
-                                        )
-                                    },
-                                    modifier = Modifier.testTag("schedules_add_preset_btn")
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("Add Weekday Deep Work (09:00–17:00)")
+                                    FilledTonalButton(
+                                        onClick = {
+                                            onUpsertSchedule(
+                                                ScheduleItem(
+                                                    id = UUID.randomUUID().toString(),
+                                                    title = "Workday",
+                                                    isActive = true,
+                                                    daysOfWeek = setOf(1, 2, 3, 4, 5),
+                                                    startHour = 9,
+                                                    startMinute = 0,
+                                                    endHour = 17,
+                                                    endMinute = 0,
+                                                    enabledPackages = uiState.targets.map { it.packageName }.toSet(),
+                                                    modeOverride = InterventionMode.STRICT_BLOCK
+                                                )
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("schedules_add_preset_btn")
+                                    ) {
+                                        Text("Workday 09–17", maxLines = 1)
+                                    }
+                                    FilledTonalButton(
+                                        onClick = {
+                                            onUpsertSchedule(
+                                                ScheduleItem(
+                                                    id = UUID.randomUUID().toString(),
+                                                    title = "Night",
+                                                    isActive = true,
+                                                    daysOfWeek = setOf(1, 2, 3, 4, 5, 6, 7),
+                                                    startHour = 22,
+                                                    startMinute = 30,
+                                                    endHour = 7,
+                                                    endMinute = 0,
+                                                    enabledPackages = uiState.targets.map { it.packageName }.toSet(),
+                                                    modeOverride = InterventionMode.REDIRECT_HOME
+                                                )
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("schedules_add_night_preset_btn")
+                                    ) {
+                                        Text("Night 22:30–07", maxLines = 1)
+                                    }
                                 }
                             }
                         }
@@ -263,22 +284,19 @@ private fun ScheduleRuleCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
+    TonalCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("schedule_card_${schedule.id}"),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = if (schedule.isActive) {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLowest
-            }
-        )
+        containerColor = if (schedule.isActive) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLowest
+        }
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -299,7 +317,7 @@ private fun ScheduleRuleCard(
                             imageVector = Icons.Rounded.Schedule,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                         Text(
                             text = schedule.formattedTimeRange(),
@@ -315,12 +333,22 @@ private fun ScheduleRuleCard(
                 )
             }
 
+            if (schedule.modeOverride != null || schedule.scopeOverride != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    schedule.modeOverride?.let { ModeBadge(mode = it, compact = true) }
+                    schedule.scopeOverride?.let { ScopeBadge(scope = it) }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ISO_DAY_LABELS.forEach { (dayNum, label) ->
                     val selected = schedule.daysOfWeek.contains(dayNum)
                     Box(
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(28.dp)
                             .clip(CircleShape)
                             .background(
                                 if (selected) MaterialTheme.colorScheme.primaryContainer
@@ -350,13 +378,13 @@ private fun ScheduleRuleCard(
                 val appSummary = if (schedule.enabledPackages.isEmpty() ||
                     schedule.enabledPackages.size >= allTargets.size
                 ) {
-                    "All supported feeds"
+                    "All apps"
                 } else {
-                    "${schedule.enabledPackages.size} selected feeds"
+                    "${schedule.enabledPackages.size} apps"
                 }
                 Text(
                     text = appSummary,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row {
@@ -395,7 +423,7 @@ private fun ScheduleEditorBottomSheet(
     onSave: (ScheduleItem) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var title by remember { mutableStateOf(initial?.title ?: "Deep Focus") }
+    var title by remember { mutableStateOf(initial?.title ?: "Workday") }
     var startHour by remember { mutableIntStateOf(initial?.startHour ?: 9) }
     var startMinute by remember { mutableIntStateOf(initial?.startMinute ?: 0) }
     var endHour by remember { mutableIntStateOf(initial?.endHour ?: 17) }
@@ -404,6 +432,8 @@ private fun ScheduleEditorBottomSheet(
     var selectedPackages by remember {
         mutableStateOf(initial?.enabledPackages ?: allTargets.map { it.packageName }.toSet())
     }
+    var modeOverride by remember { mutableStateOf(initial?.modeOverride) }
+    var scopeOverride by remember { mutableStateOf(initial?.scopeOverride) }
     var pickingStart by remember { mutableStateOf(false) }
     var pickingEnd by remember { mutableStateOf(false) }
 
@@ -414,19 +444,20 @@ private fun ScheduleEditorBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                text = if (initial == null) "Create Focus Schedule" else "Edit Schedule",
+                text = if (initial == null) "New Schedule" else "Edit Schedule",
                 style = MaterialTheme.typography.headlineSmall
             )
 
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Schedule Name") },
+                label = { Text("Name") },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -435,7 +466,7 @@ private fun ScheduleEditorBottomSheet(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
                     onClick = { pickingStart = true },
@@ -444,7 +475,7 @@ private fun ScheduleEditorBottomSheet(
                         .testTag("schedule_start_time_btn")
                 ) {
                     Text(
-                        text = "Start: ${String.format("%02d:%02d", startHour, startMinute)}",
+                        text = "Start ${String.format("%02d:%02d", startHour, startMinute)}",
                         fontFamily = MonoFontFamily
                     )
                 }
@@ -455,7 +486,7 @@ private fun ScheduleEditorBottomSheet(
                         .testTag("schedule_end_time_btn")
                 ) {
                     Text(
-                        text = "End: ${String.format("%02d:%02d", endHour, endMinute)}",
+                        text = "End ${String.format("%02d:%02d", endHour, endMinute)}",
                         fontFamily = MonoFontFamily
                     )
                 }
@@ -463,7 +494,7 @@ private fun ScheduleEditorBottomSheet(
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "Active Days",
+                    text = "Days",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -491,7 +522,61 @@ private fun ScheduleEditorBottomSheet(
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "Protected Feeds",
+                    text = "Action Override",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = modeOverride == null,
+                        onClick = { modeOverride = null },
+                        label = { Text("Default") },
+                        modifier = Modifier.testTag("schedule_mode_default")
+                    )
+                    InterventionMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = modeOverride == mode,
+                            onClick = { modeOverride = mode },
+                            label = { Text(mode.shortLabel) },
+                            modifier = Modifier.testTag("schedule_mode_${mode.name.lowercase()}")
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Scope Override",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = scopeOverride == null,
+                        onClick = { scopeOverride = null },
+                        label = { Text("Default") },
+                        modifier = Modifier.testTag("schedule_scope_default")
+                    )
+                    BlockingScope.entries.forEach { scope ->
+                        FilterChip(
+                            selected = scopeOverride == scope,
+                            onClick = { scopeOverride = scope },
+                            label = { Text(scope.displayName) },
+                            modifier = Modifier.testTag("schedule_scope_${scope.name.lowercase()}")
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Targets",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -529,20 +614,22 @@ private fun ScheduleEditorBottomSheet(
                         onSave(
                             ScheduleItem(
                                 id = initial?.id ?: UUID.randomUUID().toString(),
-                                title = title.trim().ifEmpty { "Focus Schedule" },
+                                title = title.trim().ifEmpty { "Schedule" },
                                 isActive = initial?.isActive ?: true,
                                 daysOfWeek = selectedDays,
                                 startHour = startHour,
                                 startMinute = startMinute,
                                 endHour = endHour,
                                 endMinute = endMinute,
-                                enabledPackages = selectedPackages
+                                enabledPackages = selectedPackages,
+                                modeOverride = modeOverride,
+                                scopeOverride = scopeOverride
                             )
                         )
                     },
                     modifier = Modifier.testTag("schedule_save_btn")
                 ) {
-                    Text("Save Schedule")
+                    Text("Save")
                 }
             }
         }

@@ -1,31 +1,33 @@
 # Contributing to BlockReels
 
-Use GitHub Issues for ordinary bugs and feature requests. For a security or
-privacy vulnerability, follow [SECURITY.md](SECURITY.md).
+Thank you for contributing to BlockReels. Use GitHub Issues for bugs and feature requests, and follow [SECURITY.md](SECURITY.md) for security or privacy vulnerabilities.
 
-## Set up and test
+## Development Setup
 
-Use JDK 17 and the Android SDK. From the project root, run:
+Requirements: **JDK 17+** and the **Android SDK** (`compileSdk = 36`, `minSdk = 24`).
 
 ```sh
-gradle :app:assembleDebug
+# Run JVM unit tests
 gradle :app:testDebugUnitTest
+
+# Build debug APK
+gradle :app:assembleDebug
+
+# Run local verification and APK permission audit
+./scripts/verify-local.sh
 ```
 
-When a change affects Accessibility, detection, or blocking overlays, include
-any physical-device testing you were able to do. Check both a short-video feed
-that should be interrupted and an ordinary screen, such as messaging or search,
-that should remain usable.
+## Guidelines
 
-## Open a pull request
+- **Zero-Network Invariant**: Never add `android.permission.INTERNET`, telemetry SDKs, or remote network calls.
+- **Selective Detection**: When modifying platform detectors or `DisambiguationEngine`, verify both the target short-video feed (should trigger) and ordinary surfaces such as DMs, search, profiles, and long-form videos (must remain usable).
+- **Tests**: Add or update JUnit tests under `app/src/test/java/com/blockreels/app/` for engine, resolver, detector, schedule, or backup logic changes.
+- **License Headers**: Include `// SPDX-License-Identifier: MIT` at the top of new Kotlin source files.
 
-1. Fork the public repository and make a branch from `main`.
-2. Keep the change focused. Add or update a regression test when you fix a
-   behavior that existing tests do not cover.
-3. Describe the problem, what changed, and which checks you ran. For detection
-   bugs, include the Android version, affected app and version, expected result,
-   and actual result.
+## Pull Requests
 
-Keep app behavior offline and preserve the
-[privacy policy](docs/privacy-policy.md). Contributions to the project are made
-under its MIT License.
+1. Fork the repository and create a branch from `main`.
+2. Keep changes focused and run `gradle :app:testDebugUnitTest` and `gradle :app:assembleDebug` before opening a PR.
+3. For detection fixes, note the Android version, target app version, expected behavior, and observed behavior.
+
+By contributing, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).

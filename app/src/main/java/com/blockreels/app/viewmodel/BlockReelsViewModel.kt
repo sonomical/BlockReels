@@ -1,10 +1,13 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.viewmodel
 
 import android.app.Application
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.blockreels.app.BlockReelsAccessibilityService
 import com.blockreels.app.MonitoringForegroundService
+import com.blockreels.app.data.ActiveAllowanceItem
 import com.blockreels.app.data.AnalyticsSummary
 import com.blockreels.app.data.AppSettingsState
 import com.blockreels.app.data.AppThemeMode
@@ -19,8 +22,12 @@ import com.blockreels.app.data.StatsRange
 import com.blockreels.app.data.SupportedTargets
 import com.blockreels.app.data.SystemHealthState
 import com.blockreels.app.data.TargetAppConfig
+import com.blockreels.app.state.AudioAction
+import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.state.NativeEventBus
+import com.blockreels.app.state.NativeStateStore
 import com.blockreels.app.state.ScheduleRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,6 +55,8 @@ data class BlockReelsUiState(
     val schedules: List<ScheduleItem> = emptyList(),
     val history: List<HistoryRecord> = emptyList(),
     val systemHealth: SystemHealthState = SystemHealthState(),
+    val activeAllowances: List<ActiveAllowanceItem> = emptyList(),
+    val passesUsedToday: Map<String, Int> = emptyMap(),
     val selectedStatsRange: StatsRange = StatsRange.WEEK,
     val analytics: AnalyticsSummary = AnalyticsSummary(),
     val nowMillis: Long = System.currentTimeMillis()
@@ -104,6 +113,8 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                     schedules = loaded.schedules,
                     history = loaded.history,
                     systemHealth = health,
+                    activeAllowances = readActiveAllowances(),
+                    passesUsedToday = NativeStateStore.getAllPassesUsedToday(),
                     analytics = analytics,
                     nowMillis = now
                 )
@@ -118,6 +129,15 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             NativeEventBus.events.collect { event ->
                 when (event["eventType"] as? String) {
                     "SERVICE_STATE_CHANGED" -> refreshSystemHealth()
+                    "PASS_GRANTED" -> {
+                        _uiState.update {
+                            it.copy(
+                                activeAllowances = readActiveAllowances(),
+                                passesUsedToday = NativeStateStore.getAllPassesUsedToday()
+                            )
+                        }
+                        syncBoostTicker()
+                    }
                     "REEL_BLOCKED" -> {
                         val drained = repository.drainPendingNativeEvents()
                         val incoming = if (drained.isNotEmpty()) {
@@ -132,7 +152,9 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                                     packageName = pkg,
                                     appLabel = SupportedTargets.labelForPackage(pkg),
                                     platformKey = SupportedTargets.platformKeyForPackage(pkg),
-                                    interventionMode = parseModeSafe(event["interventionMode"] as? String),
+                                    interventionMode = NativeStateStore.parseInterventionMode(
+                                        event["interventionMode"] as? String
+                                    ),
                                     diagnosticReason = (event["detectionReason"] as? String)
                                         ?: (event["diagnosticCode"] as? String)
                                         ?: "REEL_CONTAINER_MATCH"
@@ -146,13 +168,24 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    /**
-     * Runs a low-overhead countdown ticker ONLY while a Quick Focus Boost is active,
-     * eliminating idle recompositions when no boost timer is running.
-     */
+    private fun readActiveAllowances(): List<ActiveAllowanceItem> {
+        return BlockReelsAccessibilityService.getActiveAllowancesRemainingMs()
+            .entries
+            .sortedBy { it.value }
+            .map { (pkg, rem) ->
+                ActiveAllowanceItem(
+                    packageName = pkg,
+                    appLabel = SupportedTargets.labelForPackage(pkg),
+                    platformKey = SupportedTargets.platformKeyForPackage(pkg),
+                    remainingMillis = rem
+                )
+            }
+    }
+
     private fun syncBoostTicker() {
-        val hasActiveBoost = _uiState.value.activeQuickBoost != null
-        if (!hasActiveBoost) {
+        val needsTick = _uiState.value.activeQuickBoost != null ||
+            _uiState.value.activeAllowances.isNotEmpty()
+        if (!needsTick) {
             boostTickerJob?.cancel()
             boostTickerJob = null
             return
@@ -166,15 +199,19 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                 val hasExpired = currentSchedules.any {
                     it.isQuickBoost && (it.expiresAtMillis ?: 0L) <= now
                 }
+                val allowances = readActiveAllowances()
                 if (hasExpired) {
                     val remaining = currentSchedules.filter {
                         !it.isQuickBoost || (it.expiresAtMillis ?: 0L) > now
                     }
-                    _uiState.update { it.copy(schedules = remaining, nowMillis = now) }
+                    _uiState.update {
+                        it.copy(schedules = remaining, activeAllowances = allowances, nowMillis = now)
+                    }
                     repository.saveSchedules(_uiState.value.settings, _uiState.value.targets, remaining)
-                    if (remaining.none { it.isQuickBoost }) break
+                    if (remaining.none { it.isQuickBoost } && allowances.isEmpty()) break
                 } else {
-                    _uiState.update { it.copy(nowMillis = now) }
+                    _uiState.update { it.copy(activeAllowances = allowances, nowMillis = now) }
+                    if (_uiState.value.activeQuickBoost == null && allowances.isEmpty()) break
                 }
             }
             boostTickerJob = null
@@ -186,6 +223,8 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             val health = withContext(Dispatchers.IO) { readSystemHealth() }
             val drained = repository.drainPendingNativeEvents()
             val now = System.currentTimeMillis()
+            val allowances = readActiveAllowances()
+            val passes = NativeStateStore.getAllPassesUsedToday()
             if (drained.isNotEmpty()) {
                 val merged = mergeHistory(_uiState.value.history, drained)
                 val analytics = withContext(Dispatchers.Default) {
@@ -194,6 +233,8 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                 _uiState.update { current ->
                     current.copy(
                         systemHealth = health,
+                        activeAllowances = allowances,
+                        passesUsedToday = passes,
                         history = merged,
                         analytics = analytics,
                         nowMillis = now
@@ -202,10 +243,16 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                 repository.saveHistory(merged)
             } else {
                 _uiState.update { current ->
-                    current.copy(systemHealth = health, nowMillis = now)
+                    current.copy(
+                        systemHealth = health,
+                        activeAllowances = allowances,
+                        passesUsedToday = passes,
+                        nowMillis = now
+                    )
                 }
             }
             reconcileForegroundService(_uiState.value.settings.masterEnabled, health.accessibilityEnabled)
+            syncBoostTicker()
         }
     }
 
@@ -233,7 +280,7 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     fun toggleMasterProtection(enabled: Boolean) {
         updateSettings { it.copy(masterEnabled = enabled) }
         reconcileForegroundService(enabled, _uiState.value.systemHealth.accessibilityEnabled)
-        emitMessage(if (enabled) "Protection enabled" else "Protection paused")
+        emitMessage(if (enabled) "Shield enabled" else "Shield paused")
     }
 
     fun toggleTargetApp(packageName: String, enabled: Boolean) {
@@ -243,9 +290,24 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
         persistTargets(updated)
     }
 
+    fun updateTargetRule(updatedRule: TargetAppConfig) {
+        val updated = _uiState.value.targets.map {
+            if (it.packageName == updatedRule.packageName) updatedRule else it
+        }
+        persistTargets(updated)
+        emitMessage("${updatedRule.displayName} rule updated")
+    }
+
     fun setTargetAppMode(packageName: String, mode: InterventionMode) {
         val updated = _uiState.value.targets.map {
             if (it.packageName == packageName) it.copy(mode = mode) else it
+        }
+        persistTargets(updated)
+    }
+
+    fun setTargetAppScope(packageName: String, scope: BlockingScope) {
+        val updated = _uiState.value.targets.map {
+            if (it.packageName == packageName) it.copy(scope = scope) else it
         }
         persistTargets(updated)
     }
@@ -255,7 +317,29 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateHoldDuration(seconds: Int) {
-        updateSettings { it.copy(holdDurationSeconds = seconds.coerceIn(3, 15)) }
+        updateSettings { it.copy(holdDurationSeconds = seconds.coerceIn(3, 30)) }
+    }
+
+    fun updateAllowanceMinutes(minutes: Int) {
+        updateSettings { it.copy(allowanceMinutes = minutes.coerceIn(1, 30)) }
+    }
+
+    fun updateDailyPassLimit(limit: Int) {
+        updateSettings { it.copy(dailyPassLimit = limit.coerceIn(0, 10)) }
+    }
+
+    fun updateEntryDelaySeconds(seconds: Int) {
+        updateSettings { it.copy(entryDelaySeconds = seconds.coerceIn(0, 10)) }
+    }
+
+    fun updateSensitivity(sensitivity: DetectionSensitivity) {
+        updateSettings { it.copy(sensitivity = sensitivity) }
+    }
+
+    fun updateAudioAction(action: AudioAction) {
+        updateSettings {
+            it.copy(audioAction = action, soundEnabled = action != AudioAction.NONE)
+        }
     }
 
     fun updateCustomMessage(message: String) {
@@ -264,17 +348,13 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
         emitMessage("Pause prompt updated")
     }
 
-    fun setSoundEnabled(enabled: Boolean) {
-        updateSettings { it.copy(soundEnabled = enabled) }
-    }
-
     fun setHapticsEnabled(enabled: Boolean) {
         updateSettings { it.copy(hapticsEnabled = enabled) }
     }
 
     fun setStrictMode(enabled: Boolean) {
         updateSettings { it.copy(strictMode = enabled) }
-        emitMessage(if (enabled) "Strict Block enforced across all apps" else "Strict Mode disabled")
+        emitMessage(if (enabled) "Strict Lock enforced across all targets" else "Strict Lock disabled")
     }
 
     fun setThemeMode(mode: AppThemeMode) {
@@ -287,6 +367,13 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
 
     fun resetOnboarding() {
         updateSettings { it.copy(onboardingCompleted = false) }
+    }
+
+    fun revokeTemporaryAllowance(packageName: String) {
+        BlockReelsAccessibilityService.revokeTemporaryAllowance(packageName)
+        _uiState.update { it.copy(activeAllowances = readActiveAllowances()) }
+        syncBoostTicker()
+        emitMessage("Pass revoked for ${SupportedTargets.labelForPackage(packageName)}")
     }
 
     fun enablePinLock(pin: String) {
@@ -310,14 +397,17 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
         return CryptoPinHelper.verifyPin(candidate, settings.pinHash, settings.pinSalt)
     }
 
-    fun startQuickBoost(durationMinutes: Int) {
+    fun startQuickBoost(
+        durationMinutes: Int,
+        modeOverride: InterventionMode = InterventionMode.STRICT_BLOCK
+    ) {
         val now = System.currentTimeMillis()
         val startCal = Calendar.getInstance().apply { timeInMillis = now }
         val endCal = Calendar.getInstance().apply { timeInMillis = now + durationMinutes * 60_000L }
         val allPackages = _uiState.value.targets.map { it.packageName }.toSet()
         val boost = ScheduleItem(
             id = "${ScheduleRule.QUICK_BOOST_ID_PREFIX}$now",
-            title = "Focus Boost (${durationMinutes}m)",
+            title = "Focus Lock (${durationMinutes}m)",
             isActive = true,
             daysOfWeek = setOf(1, 2, 3, 4, 5, 6, 7),
             startHour = startCal.get(Calendar.HOUR_OF_DAY),
@@ -325,6 +415,7 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             endHour = endCal.get(Calendar.HOUR_OF_DAY),
             endMinute = endCal.get(Calendar.MINUTE),
             enabledPackages = allPackages,
+            modeOverride = modeOverride,
             isQuickBoost = true,
             expiresAtMillis = now + durationMinutes * 60_000L
         )
@@ -334,14 +425,14 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             updateSettings { it.copy(masterEnabled = true) }
         }
         syncBoostTicker()
-        emitMessage("Focus Boost active for $durationMinutes min")
+        emitMessage("Focus Lock active for ${durationMinutes}m (${modeOverride.shortLabel})")
     }
 
     fun cancelQuickBoost() {
         val filtered = _uiState.value.schedules.filterNot { it.isQuickBoost }
         persistSchedules(filtered)
         syncBoostTicker()
-        emitMessage("Focus Boost ended")
+        emitMessage("Focus Lock ended")
     }
 
     fun upsertSchedule(schedule: ScheduleItem) {
@@ -384,7 +475,7 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             id = "preview_${UUID.randomUUID()}",
             timestampMillis = System.currentTimeMillis(),
             packageName = "com.instagram.android",
-            appLabel = "Mindful Pause Preview",
+            appLabel = "Overlay Test",
             platformKey = "INSTAGRAM",
             interventionMode = _uiState.value.settings.globalMode,
             diagnosticReason = "INTERACTIVE_PREVIEW"
@@ -399,9 +490,13 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                 computeAnalytics(emptyList(), _uiState.value.selectedStatsRange)
             }
             _uiState.update { current ->
-                current.copy(history = emptyList(), analytics = emptyAnalytics)
+                current.copy(
+                    history = emptyList(),
+                    passesUsedToday = emptyMap(),
+                    analytics = emptyAnalytics
+                )
             }
-            emitMessage("Interception history cleared")
+            emitMessage("Activity history cleared")
         }
     }
 
@@ -426,12 +521,12 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                     repository.saveTargets(restoredSettings, restoredTargets, restoredSchedules)
                     repository.saveSchedules(restoredSettings, restoredTargets, restoredSchedules)
                     syncBoostTicker()
-                    emitMessage("Backup restored successfully")
+                    emitMessage("Backup restored")
                 }
                 true
             },
             onFailure = { err ->
-                emitMessage(err.message ?: "Invalid backup JSON format")
+                emitMessage(err.message ?: "Invalid backup JSON")
                 false
             }
         )
@@ -497,15 +592,6 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
         _snackbarMessages.tryEmit(message)
     }
 
-    private fun parseModeSafe(raw: String?): InterventionMode = when (raw?.uppercase()) {
-        "AUTO_BACK" -> InterventionMode.AUTO_BACK
-        "STRICT_BLOCK" -> InterventionMode.STRICT_BLOCK
-        else -> InterventionMode.MINDFUL_PAUSE
-    }
-
-    /**
-     * Single-pass O(N) analytics engine with zero SimpleDateFormat/Date allocations per record.
-     */
     private fun computeAnalytics(history: List<HistoryRecord>, range: StatsRange): AnalyticsSummary {
         val cal = Calendar.getInstance()
         val shortWeekdays = DateFormatSymbols.getInstance(Locale.US).shortWeekdays
@@ -525,7 +611,6 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             }.timeInMillis
         } ?: Long.MIN_VALUE
 
-        // Precompute the 7-day chart keys and labels in one tiny loop.
         val chartKeys = IntArray(7)
         val chartLabels = Array(7) { "" }
         val chartCounts = IntArray(7)

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.intervention
 
 import android.content.Context
@@ -6,8 +7,10 @@ import android.os.SystemClock
 import com.blockreels.app.detection.AppPlatform
 import com.blockreels.app.detection.DetectionResult
 import com.blockreels.app.engine.DetectionTrace
+import com.blockreels.app.state.AudioAction
 import com.blockreels.app.state.InterventionConfig
 import com.blockreels.app.state.InterventionMode
+import com.blockreels.app.state.NativeStateStore
 import java.util.concurrent.ConcurrentHashMap
 
 class InterventionController internal constructor(
@@ -23,7 +26,9 @@ class InterventionController internal constructor(
     private val onAllowanceGranted: (String) -> Unit = {},
     private val onTikTokOverlayAttached: (String, Long) -> Unit = { _, _ -> },
     private val onFeedLeft: (String) -> Unit = {},
-    private val dispatchAudio: (() -> Unit) -> Unit = { it() }
+    private val dispatchAudio: (() -> Unit) -> Unit = { it() },
+    private val getPassesUsedToday: (String) -> Int = { NativeStateStore.getPassesUsedToday(it) },
+    private val recordPassUsed: (String) -> Unit = { NativeStateStore.recordTemporaryPassUsed(it) }
 ) {
     constructor(
         context: Context,
@@ -76,6 +81,7 @@ class InterventionController internal constructor(
         val packageName: String,
         val windowId: Int?,
         val mode: InterventionMode,
+        val allowanceMinutes: Int,
         val phase: Phase = Phase.ACTIVE
     )
 
@@ -97,8 +103,30 @@ class InterventionController internal constructor(
         return 0L
     }
 
+    fun getActiveAllowancesRemainingMs(): Map<String, Long> {
+        val now = allowanceNowMs()
+        val result = mutableMapOf<String, Long>()
+        temporaryAllowances.entries.forEach { (pkg, expiry) ->
+            val rem = expiry - now
+            if (rem > 0L) {
+                result[pkg] = rem
+            } else {
+                temporaryAllowances.remove(pkg, expiry)
+            }
+        }
+        return result
+    }
+
+    fun revokeTemporaryAllowance(packageName: String): Boolean {
+        return temporaryAllowances.remove(packageName) != null
+    }
+
+    fun revokeAllAllowances() {
+        temporaryAllowances.clear()
+    }
+
     fun grantTemporaryAllowance(packageName: String, durationMs: Long = TEMPORARY_ALLOWANCE_MS) {
-        temporaryAllowances[packageName] = allowanceNowMs() + durationMs
+        temporaryAllowances[packageName] = allowanceNowMs() + durationMs.coerceAtLeast(60_000L)
         if (hasInterventionFor(packageName)) dismissOverlay()
         onAllowanceGranted(packageName)
     }
@@ -127,8 +155,12 @@ class InterventionController internal constructor(
             return false
         }
         val intervention = Intervention(
-            sequence.incrementAndGet(), packageName, windowId, config.mode,
-            if (sameTikTokExit) Phase.EXIT_FAILED else Phase.ACTIVE
+            id = sequence.incrementAndGet(),
+            packageName = packageName,
+            windowId = windowId,
+            mode = config.mode,
+            allowanceMinutes = config.allowanceMinutes.coerceIn(1, 30),
+            phase = if (sameTikTokExit) Phase.EXIT_FAILED else Phase.ACTIVE
         )
         DetectionTrace.bindIntervention(intervention.id, evaluationId)
         DetectionTrace.lifecycle(intervention.id, DetectionTrace.Lifecycle.REQUESTED, packageName, config.mode.name)
@@ -142,14 +174,27 @@ class InterventionController internal constructor(
             }
         }
 
+        val effectiveAudio = effectiveAudioAction(config)
         when (config.mode) {
             InterventionMode.AUTO_BACK -> {
-                if (config.soundEnabled) dispatchAudio {
+                if (effectiveAudio != AudioAction.NONE) dispatchAudio {
                     if (isActive(intervention.id)) audioDuckingManager.requestTransientFocus(intervention.id)
                 }
                 DetectionTrace.lifecycle(intervention.id, DetectionTrace.Lifecycle.AUTO_BACK, packageName)
                 try {
                     executeBackOrHome()
+                } finally {
+                    finishIntervention(intervention.id)
+                }
+            }
+            InterventionMode.REDIRECT_HOME -> {
+                if (effectiveAudio != AudioAction.NONE) dispatchAudio {
+                    if (isActive(intervention.id)) audioDuckingManager.requestTransientFocus(intervention.id)
+                }
+                DetectionTrace.lifecycle(intervention.id, DetectionTrace.Lifecycle.EXIT_REQUESTED, packageName)
+                try {
+                    if (!onSystemHomeAction()) redirectToHomeScreen()
+                    backLoopGuard.reset()
                 } finally {
                     finishIntervention(intervention.id)
                 }
@@ -213,6 +258,14 @@ class InterventionController internal constructor(
     private fun isInstagram(packageName: String): Boolean =
         AppPlatform.fromPackageName(packageName) == AppPlatform.INSTAGRAM
 
+    private fun effectiveAudioAction(config: InterventionConfig): AudioAction {
+        return if (!config.soundEnabled && config.audioAction == AudioAction.SILENCE) {
+            AudioAction.NONE
+        } else {
+            config.audioAction
+        }
+    }
+
     private fun requestTikTokExit(interventionId: Long) {
         val active = currentIntervention.get() ?: return
         if (active.id != interventionId || active.phase != Phase.ACTIVE) return
@@ -249,6 +302,11 @@ class InterventionController internal constructor(
 
     private fun showOverlay(intervention: Intervention, config: InterventionConfig) {
         val strict = config.mode == InterventionMode.STRICT_BLOCK
+        val dailyLimit = config.dailyPassLimit.coerceIn(0, 10)
+        val passesUsed = if (!strict && dailyLimit > 0) getPassesUsedToday(intervention.packageName) else 0
+        val quotaExhausted = !strict && dailyLimit > 0 && passesUsed >= dailyLimit
+        val audioAction = effectiveAudioAction(config)
+
         val failed: () -> Unit = {
             if (currentIntervention.get()?.id == intervention.id) {
                 try {
@@ -266,12 +324,22 @@ class InterventionController internal constructor(
         try {
             overlay.show(
                 interventionId = intervention.id,
-                title = if (strict) "Feed blocked" else "Take a Mindful Pause",
-                message = if (strict) "This short-video feed is blocked." else config.customMessage,
-                holdSeconds = config.holdDurationSeconds,
-                isStrictMode = strict,
-                allowanceMinutes = (TEMPORARY_ALLOWANCE_MS / 60_000L).toInt(),
+                title = when {
+                    strict -> "Feed blocked"
+                    quotaExhausted -> "Daily passes used"
+                    else -> "Take a Mindful Pause"
+                },
+                message = when {
+                    strict -> "This short-video feed is blocked."
+                    quotaExhausted -> "You used all $dailyLimit passes for today."
+                    else -> config.customMessage
+                },
+                holdSeconds = config.holdDurationSeconds.coerceIn(3, 30),
+                isStrictMode = strict || quotaExhausted,
+                allowanceMinutes = intervention.allowanceMinutes,
                 hapticsEnabled = config.hapticsEnabled,
+                dailyPassLimit = dailyLimit,
+                passesUsedToday = passesUsed,
                 onExitRequested = {
                     if (currentIntervention.get()?.id == intervention.id) {
                         if (isTikTok(intervention.packageName)) requestTikTokExit(intervention.id)
@@ -290,8 +358,8 @@ class InterventionController internal constructor(
                 },
                 onFailed = failed,
                 onAttached = {
-                    if (config.soundEnabled) dispatchAudio {
-                        if (isActive(intervention.id)) silenceAttachedOverlay(intervention)
+                    if (audioAction != AudioAction.NONE) dispatchAudio {
+                        if (isActive(intervention.id)) silenceAttachedOverlay(intervention, audioAction)
                     }
                 }
             )
@@ -303,7 +371,11 @@ class InterventionController internal constructor(
         }
     }
 
-    private fun silenceAttachedOverlay(intervention: Intervention) {
+    private fun silenceAttachedOverlay(intervention: Intervention, audioAction: AudioAction) {
+        if (audioAction == AudioAction.DUCK) {
+            audioDuckingManager.requestTransientFocus(intervention.id)
+            return
+        }
         val tiktok = isTikTok(intervention.packageName)
         if (tiktok && audioDuckingManager.silenceOverlayMedia(intervention.id)) return
 
@@ -322,7 +394,13 @@ class InterventionController internal constructor(
         if (unlocked && intervention.phase == Phase.EXITING) return
         if (intervention.id != id || !currentIntervention.compareAndSet(intervention, null)) return
         if (intervention.phase == Phase.EXITING) onExitFinished(id)
-        if (unlocked) grantTemporaryAllowance(intervention.packageName)
+        if (unlocked) {
+            recordPassUsed(intervention.packageName)
+            grantTemporaryAllowance(
+                intervention.packageName,
+                intervention.allowanceMinutes * 60_000L
+            )
+        }
         DetectionTrace.lifecycle(id, DetectionTrace.Lifecycle.FINISHED, intervention.packageName)
         dispatchAudio { audioDuckingManager.restoreAudio(id) }
     }

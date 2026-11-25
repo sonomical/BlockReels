@@ -1,16 +1,21 @@
-# Security policy
+# Security Policy
 
-Please report security and privacy vulnerabilities privately. In the
-[BlockReels Security tab](https://github.com/anasasl16313-dev/BlockReels/security),
-choose **Report a vulnerability** if GitHub shows it. If the option is unavailable,
-open an issue asking a maintainer for a private reporting channel and leave out
-all vulnerability details.
+## Reporting a Vulnerability
 
-Include the affected BlockReels version or commit, Android version, what an
-affected user could experience, and the minimum information a maintainer needs
-to investigate. Use synthetic or redacted evidence. Keep credentials, signing
-keys, private messages, and raw Accessibility captures out of reports.
+Please report security and privacy vulnerabilities privately using the repository's **Security** tab (**Report a vulnerability** / GitHub Private Vulnerability Reporting). If private advisories are not enabled on a fork, open an issue requesting a private contact channel without disclosing exploit or vulnerability details.
 
-Report issues in the latest published release or on the current `main` branch.
-Use the [contribution guide](CONTRIBUTING.md) for ordinary functional issues,
-such as a feed that is no longer detected after a third-party app update.
+Include:
+- Affected BlockReels version or commit SHA
+- Android version and device model (if relevant)
+- Impact and reproduction steps using synthetic or redacted data
+
+Do not include signing keys, personal messages, or raw Accessibility tree dumps containing private user data in reports.
+
+## Scope
+
+Security reports cover:
+- Unexpected network permissions or data leakage
+- PIN lock bypasses or weak credential storage
+- Privilege escalation or unsafe IPC / Intent handling
+
+For ordinary detection regressions (such as a feed layout change after a third-party app update), open a regular bug report via [CONTRIBUTING.md](CONTRIBUTING.md).

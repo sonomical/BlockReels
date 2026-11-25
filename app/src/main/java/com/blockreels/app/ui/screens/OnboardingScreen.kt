@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
 import androidx.compose.foundation.background
@@ -5,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,12 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,11 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.data.TargetAppConfig
 import com.blockreels.app.ui.components.PlatformAvatar
+import com.blockreels.app.ui.components.TonalCard
 import com.blockreels.app.viewmodel.BlockReelsUiState
 import kotlinx.coroutines.launch
 
@@ -58,7 +54,8 @@ fun OnboardingScreen(
     onFinishOnboarding: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pageCount = 3
+    val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -71,10 +68,10 @@ fun OnboardingScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        repeat(4) { idx ->
+                        repeat(pageCount) { idx ->
                             val selected = pagerState.currentPage == idx
                             Box(
                                 modifier = Modifier
@@ -116,7 +113,7 @@ fun OnboardingScreen(
 
                         Button(
                             onClick = {
-                                if (pagerState.currentPage < 3) {
+                                if (pagerState.currentPage < pageCount - 1) {
                                     scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                                 } else {
                                     onFinishOnboarding()
@@ -125,7 +122,7 @@ fun OnboardingScreen(
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.testTag("onboarding_next_btn")
                         ) {
-                            Text(if (pagerState.currentPage < 3) "Continue" else "Start Focusing")
+                            Text(if (pagerState.currentPage < pageCount - 1) "Next" else "Start")
                         }
                     }
                 }
@@ -148,83 +145,23 @@ fun OnboardingScreen(
                 Column(
                     modifier = Modifier.widthIn(max = 520.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
                     when (page) {
-                        0 -> WelcomeStep()
-                        1 -> AccessibilityStep(
+                        0 -> AccessibilityStep(
                             enabled = uiState.systemHealth.accessibilityEnabled,
                             onOpenSettings = onOpenAccessibilitySettings
                         )
-                        2 -> BatteryStep(
+                        1 -> BatteryStep(
                             ignored = uiState.systemHealth.batteryOptimizationIgnored,
                             onOpenSettings = onOpenBatterySettings
                         )
-                        3 -> TargetAppsStep(
+                        2 -> TargetAppsStep(
                             targets = uiState.targets,
                             onToggleTarget = onToggleTarget
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WelcomeStep() {
-    Box(
-        modifier = Modifier
-            .size(88.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.Shield,
-            contentDescription = "BlockReels Shield",
-            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.size(46.dp)
-        )
-    }
-
-    Text(
-        text = "Reclaim Your Attention",
-        style = MaterialTheme.typography.headlineLarge,
-        textAlign = TextAlign.Center
-    )
-    Text(
-        text = "BlockReels selectively interrupts addictive Reels, YouTube Shorts, and TikTok loops while leaving your messages, search, and long-form videos completely intact.",
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center
-    )
-
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.CloudOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "100% Offline & Zero Telemetry",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    text = "No INTERNET permission. No accounts. Everything runs strictly on your device.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -237,7 +174,7 @@ private fun AccessibilityStep(
 ) {
     Box(
         modifier = Modifier
-            .size(80.dp)
+            .size(72.dp)
             .clip(CircleShape)
             .background(
                 if (enabled) MaterialTheme.colorScheme.primaryContainer
@@ -250,41 +187,23 @@ private fun AccessibilityStep(
             contentDescription = null,
             tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
             else MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier.size(36.dp)
         )
     }
 
     Text(
-        text = "Accessibility Shield",
+        text = "Accessibility Service",
         style = MaterialTheme.typography.headlineMedium,
         textAlign = TextAlign.Center
     )
 
-    Card(
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Prominent Disclosure",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "BlockReels uses Android's AccessibilityService API only to recognize short-video feed containers (Reels, Shorts, TikTok) and trigger your chosen pause overlay or Back gesture.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = "Your messages, typed text, and browsing history are never collected or transmitted.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "BlockReels uses AccessibilityService on-device to detect short-video feeds and trigger your chosen block action. No network permission or data collection.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp)
+        )
     }
 
     if (enabled) {
@@ -293,10 +212,10 @@ private fun AccessibilityStep(
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Text(
-                text = "Accessibility Shield Active",
+                text = "Enabled",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
             )
         }
     } else {
@@ -306,7 +225,7 @@ private fun AccessibilityStep(
                 .fillMaxWidth()
                 .testTag("onboarding_accessibility_btn")
         ) {
-            Text("Enable in Accessibility Settings")
+            Text("Open Accessibility Settings")
         }
     }
 }
@@ -318,7 +237,7 @@ private fun BatteryStep(
 ) {
     Box(
         modifier = Modifier
-            .size(80.dp)
+            .size(72.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center
@@ -327,17 +246,17 @@ private fun BatteryStep(
             imageVector = if (ignored) Icons.Rounded.CheckCircle else Icons.Rounded.BatteryChargingFull,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier.size(36.dp)
         )
     }
 
     Text(
-        text = "Keep Shield Resilient",
+        text = "Background Execution",
         style = MaterialTheme.typography.headlineMedium,
         textAlign = TextAlign.Center
     )
     Text(
-        text = "Allowing unrestricted battery usage prevents Android from putting the local accessibility detector to sleep in the background.",
+        text = "Exempt BlockReels from battery optimization so Android keeps the blocker running.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
@@ -349,10 +268,10 @@ private fun BatteryStep(
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Text(
-                text = "Battery Optimization Exempted",
+                text = "Unrestricted",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
             )
         }
     } else {
@@ -362,7 +281,7 @@ private fun BatteryStep(
                 .fillMaxWidth()
                 .testTag("onboarding_battery_btn")
         ) {
-            Text("Allow Unrestricted Background Run")
+            Text("Allow Unrestricted Battery")
         }
     }
 }
@@ -376,36 +295,26 @@ private fun TargetAppsStep(
         imageVector = Icons.Rounded.Tune,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(40.dp)
+        modifier = Modifier.size(36.dp)
     )
     Text(
-        text = "Choose Feeds to Guard",
+        text = "Select Targets",
         style = MaterialTheme.typography.headlineMedium,
-        textAlign = TextAlign.Center
-    )
-    Text(
-        text = "Select which short-form video feeds to block first. You can fine-tune modes anytime.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
     )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        targets.take(4).forEach { target ->
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+        targets.forEach { target ->
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PlatformAvatar(platformKey = target.platformKey, sizeDp = 40)
+                    PlatformAvatar(platformKey = target.platformKey, sizeDp = 36)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(target.displayName, style = MaterialTheme.typography.titleSmall)
                         Text(

@@ -7,6 +7,7 @@
     <string name="exit_reels">Leave this feed</string>
     <string name="hold_to_unlock">Hold to Unlock</string>
     <string name="strict_mode_active">This short-video feed is blocked. Leave this feed to continue.</string>
+    <string name="quota_exhausted_message">Daily pass limit reached. Leave this feed to stay on track.</string>
     <string name="exit_in_progress">Leaving TikTok…</string>
     <string name="exit_not_confirmed">Use your device’s Home button</string>
     <string name="exit_not_confirmed_help">Leaving TikTok could not be confirmed. Press your device’s Home button to leave.</string>

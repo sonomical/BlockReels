@@ -183,6 +183,19 @@ object DisambiguationEngine {
                     return SuppressionReason.STANDARD_FEED_SCRUBBER
                 }
             }
+            AppPlatform.SNAPCHAT -> {
+                if (viewId == "com.snapchat.android:id/chat_input_text_field") {
+                    return SuppressionReason.CHAT_COMPOSER_ACTIVE
+                }
+                if (viewId == "com.snapchat.android:id/chat_message_list" ||
+                    viewId == "com.snapchat.android:id/feed_list"
+                ) {
+                    return SuppressionReason.CHAT_THREAD_CONTAINER
+                }
+                if (viewId == "com.snapchat.android:id/camera_capture_button") {
+                    return SuppressionReason.CREATOR_CAMERA_ACTIVE
+                }
+            }
         }
 
         return null

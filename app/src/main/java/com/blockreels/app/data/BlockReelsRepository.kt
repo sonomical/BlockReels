@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.data
 
 import android.content.Context
@@ -7,6 +8,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.blockreels.app.state.AudioAction
+import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionConfig
 import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.state.NativeStateStore
@@ -25,6 +29,11 @@ class BlockReelsRepository(private val context: Context) {
     private val KEY_MASTER = booleanPreferencesKey("ui_master_enabled")
     private val KEY_GLOBAL_MODE = stringPreferencesKey("ui_global_mode")
     private val KEY_HOLD_SECONDS = intPreferencesKey("ui_hold_seconds")
+    private val KEY_ALLOWANCE_MINUTES = intPreferencesKey("ui_allowance_minutes")
+    private val KEY_DAILY_PASS_LIMIT = intPreferencesKey("ui_daily_pass_limit")
+    private val KEY_ENTRY_DELAY_SECONDS = intPreferencesKey("ui_entry_delay_seconds")
+    private val KEY_SENSITIVITY = stringPreferencesKey("ui_detection_sensitivity")
+    private val KEY_AUDIO_ACTION = stringPreferencesKey("ui_audio_action")
     private val KEY_CUSTOM_MSG = stringPreferencesKey("ui_custom_message")
     private val KEY_SOUND = booleanPreferencesKey("ui_sound_enabled")
     private val KEY_HAPTICS = booleanPreferencesKey("ui_haptics_enabled")
@@ -49,13 +58,22 @@ class BlockReelsRepository(private val context: Context) {
         NativeStateStore.initialize(context).await()
         val prefs = context.uiDataStore.data.first()
 
+        val legacySound = prefs[KEY_SOUND] ?: true
+        val audioAction = prefs[KEY_AUDIO_ACTION]?.let(NativeStateStore::parseAudioAction)
+            ?: if (legacySound) AudioAction.SILENCE else AudioAction.NONE
+
         val settings = AppSettingsState(
             masterEnabled = prefs[KEY_MASTER] ?: NativeStateStore.isMasterEnabled(),
-            globalMode = parseMode(prefs[KEY_GLOBAL_MODE]),
-            holdDurationSeconds = (prefs[KEY_HOLD_SECONDS] ?: 5).coerceIn(3, 15),
+            globalMode = NativeStateStore.parseInterventionMode(prefs[KEY_GLOBAL_MODE]),
+            holdDurationSeconds = (prefs[KEY_HOLD_SECONDS] ?: 5).coerceIn(3, 30),
+            allowanceMinutes = (prefs[KEY_ALLOWANCE_MINUTES] ?: 5).coerceIn(1, 30),
+            dailyPassLimit = (prefs[KEY_DAILY_PASS_LIMIT] ?: 0).coerceIn(0, 10),
+            entryDelaySeconds = (prefs[KEY_ENTRY_DELAY_SECONDS] ?: 0).coerceIn(0, 10),
+            sensitivity = NativeStateStore.parseSensitivity(prefs[KEY_SENSITIVITY]),
+            audioAction = audioAction,
             customMessage = prefs[KEY_CUSTOM_MSG]
                 ?: "Take a deep breath. Do you really want to scroll right now?",
-            soundEnabled = prefs[KEY_SOUND] ?: true,
+            soundEnabled = audioAction != AudioAction.NONE,
             hapticsEnabled = prefs[KEY_HAPTICS] ?: true,
             pinProtected = prefs[KEY_PIN_PROTECTED] ?: false,
             pinHash = prefs[KEY_PIN_HASH] ?: "",
@@ -81,7 +99,6 @@ class BlockReelsRepository(private val context: Context) {
             saveHistoryInternal(mergedHistory)
         }
 
-        // Sync native engine state so AccessibilityService always reflects current config.
         syncToNativeStateStore(settings, targets, schedules)
 
         LoadedSnapshot(
@@ -106,7 +123,7 @@ class BlockReelsRepository(private val context: Context) {
                 packageName = pkg,
                 appLabel = SupportedTargets.labelForPackage(pkg),
                 platformKey = SupportedTargets.platformKeyForPackage(pkg),
-                interventionMode = parseMode(ev["interventionMode"] as? String),
+                interventionMode = NativeStateStore.parseInterventionMode(ev["interventionMode"] as? String),
                 diagnosticReason = (ev["detectionReason"] as? String) ?: "REEL_CONTAINER_MATCH"
             )
         }
@@ -123,8 +140,13 @@ class BlockReelsRepository(private val context: Context) {
             prefs[KEY_MASTER] = settings.masterEnabled
             prefs[KEY_GLOBAL_MODE] = settings.globalMode.name
             prefs[KEY_HOLD_SECONDS] = settings.holdDurationSeconds
+            prefs[KEY_ALLOWANCE_MINUTES] = settings.allowanceMinutes
+            prefs[KEY_DAILY_PASS_LIMIT] = settings.dailyPassLimit
+            prefs[KEY_ENTRY_DELAY_SECONDS] = settings.entryDelaySeconds
+            prefs[KEY_SENSITIVITY] = settings.sensitivity.name
+            prefs[KEY_AUDIO_ACTION] = settings.audioAction.name
             prefs[KEY_CUSTOM_MSG] = settings.customMessage
-            prefs[KEY_SOUND] = settings.soundEnabled
+            prefs[KEY_SOUND] = settings.audioAction != AudioAction.NONE
             prefs[KEY_HAPTICS] = settings.hapticsEnabled
             prefs[KEY_PIN_PROTECTED] = settings.pinProtected
             prefs[KEY_PIN_HASH] = settings.pinHash
@@ -174,57 +196,14 @@ class BlockReelsRepository(private val context: Context) {
         settings: AppSettingsState,
         targets: List<TargetAppConfig>,
         schedules: List<ScheduleItem>
-    ): String {
-        val root = JSONObject().apply {
-            put("schemaVersion", 2)
-            put("exportedAt", System.currentTimeMillis())
-            put("settings", JSONObject().apply {
-                put("masterEnabled", settings.masterEnabled)
-                put("globalMode", settings.globalMode.name)
-                put("holdDurationSeconds", settings.holdDurationSeconds)
-                put("customMessage", settings.customMessage)
-                put("soundEnabled", settings.soundEnabled)
-                put("hapticsEnabled", settings.hapticsEnabled)
-                put("strictMode", settings.strictMode)
-                put("themeMode", settings.themeMode.name)
-            })
-            put("targets", JSONArray(encodeTargetsJson(targets)))
-            put("schedules", JSONArray(encodeSchedulesJson(schedules.filterNot { it.isQuickBoost })))
-        }
-        return root.toString(2)
-    }
+    ): String = BackupCodec.exportBackupJson(settings, targets, schedules)
 
     fun parseAndValidateBackupJson(
         rawJson: String,
         currentSettings: AppSettingsState
     ): Result<Triple<AppSettingsState, List<TargetAppConfig>, List<ScheduleItem>>> {
-        return runCatching {
-            val root = JSONObject(rawJson.trim())
-            val version = root.optInt("schemaVersion", -1)
-            require(version in 1..2) { "Unsupported backup schema version." }
-
-            val settingsObj = root.getJSONObject("settings")
-            val restoredSettings = currentSettings.copy(
-                masterEnabled = settingsObj.optBoolean("masterEnabled", true),
-                globalMode = parseMode(settingsObj.optString("globalMode")),
-                holdDurationSeconds = settingsObj.optInt("holdDurationSeconds", 5).coerceIn(3, 15),
-                customMessage = settingsObj.optString(
-                    "customMessage",
-                    "Take a deep breath. Do you really want to scroll right now?"
-                ).take(240),
-                soundEnabled = settingsObj.optBoolean("soundEnabled", true),
-                hapticsEnabled = settingsObj.optBoolean("hapticsEnabled", true),
-                strictMode = settingsObj.optBoolean("strictMode", false),
-                themeMode = parseTheme(settingsObj.optString("themeMode"))
-            )
-
-            val restoredTargets = parseTargetsJson(root.getJSONArray("targets").toString()).map {
-                it.copy(isInstalled = isPackageInstalled(it.packageName))
-            }
-            require(restoredTargets.isNotEmpty()) { "Backup contains no target rules." }
-
-            val restoredSchedules = parseSchedulesJson(root.getJSONArray("schedules").toString())
-            Triple(restoredSettings, restoredTargets, restoredSchedules)
+        return BackupCodec.parseAndValidateBackupJson(rawJson, currentSettings).map { (s, t, sc) ->
+            Triple(s, t.map { it.copy(isInstalled = isPackageInstalled(it.packageName)) }, sc)
         }
     }
 
@@ -240,15 +219,16 @@ class BlockReelsRepository(private val context: Context) {
         targets: List<TargetAppConfig>,
         schedules: List<ScheduleItem>
     ) {
-        val effectiveMode = if (settings.strictMode) InterventionMode.STRICT_BLOCK else settings.globalMode
         val rawRules = targets.map { target ->
-            val mode = if (settings.strictMode) InterventionMode.STRICT_BLOCK else target.mode
-            mapOf<String, Any>(
-                "packageName" to target.packageName,
-                "isEnabled" to target.isEnabled,
-                "interventionMode" to mode.name,
-                "holdDurationSeconds" to settings.holdDurationSeconds
-            )
+            buildMap<String, Any> {
+                put("packageName", target.packageName)
+                put("isEnabled", target.isEnabled)
+                put("interventionMode", target.mode.name)
+                put("scope", target.scope.name)
+                target.holdDurationOverride?.let { put("holdDurationSeconds", it) }
+                target.allowanceMinutesOverride?.let { put("allowanceMinutes", it) }
+                target.dailyPassLimitOverride?.let { put("dailyPassLimit", it) }
+            }
         }
         val rawSchedules = schedules.map { sched ->
             val nativeId = if (sched.isQuickBoost && !sched.id.startsWith(ScheduleRule.QUICK_BOOST_ID_PREFIX)) {
@@ -256,25 +236,33 @@ class BlockReelsRepository(private val context: Context) {
             } else {
                 sched.id
             }
-            mapOf<String, Any>(
-                "id" to nativeId,
-                "title" to sched.title,
-                "isActive" to sched.isActive,
-                "daysOfWeek" to sched.daysOfWeek.toList(),
-                "startHour" to sched.startHour,
-                "startMinute" to sched.startMinute,
-                "endHour" to sched.endHour,
-                "endMinute" to sched.endMinute,
-                "enabledPackages" to sched.enabledPackages.toList()
-            )
+            buildMap<String, Any> {
+                put("id", nativeId)
+                put("title", sched.title)
+                put("isActive", sched.isActive)
+                put("daysOfWeek", sched.daysOfWeek.toList())
+                put("startHour", sched.startHour)
+                put("startMinute", sched.startMinute)
+                put("endHour", sched.endHour)
+                put("endMinute", sched.endMinute)
+                put("enabledPackages", sched.enabledPackages.toList())
+                sched.modeOverride?.let { put("modeOverride", it.name) }
+                sched.scopeOverride?.let { put("scopeOverride", it.name) }
+            }
         }
         val config = InterventionConfig(
-            mode = effectiveMode,
+            mode = settings.globalMode,
             holdDurationSeconds = settings.holdDurationSeconds,
             customMessage = settings.customMessage,
-            soundEnabled = settings.soundEnabled,
+            soundEnabled = settings.audioAction != AudioAction.NONE,
             hapticsEnabled = settings.hapticsEnabled,
-            pinProtected = settings.pinProtected
+            pinProtected = settings.pinProtected,
+            allowanceMinutes = settings.allowanceMinutes,
+            dailyPassLimit = settings.dailyPassLimit,
+            entryDelaySeconds = settings.entryDelaySeconds,
+            sensitivity = settings.sensitivity,
+            audioAction = settings.audioAction,
+            strictMode = settings.strictMode
         )
         NativeStateStore.applyRestoredProtection(
             context = context,
@@ -308,106 +296,11 @@ class BlockReelsRepository(private val context: Context) {
         }
     }
 
-    private fun parseMode(raw: String?): InterventionMode = when (raw?.uppercase()) {
-        "AUTO_BACK" -> InterventionMode.AUTO_BACK
-        "STRICT_BLOCK" -> InterventionMode.STRICT_BLOCK
-        else -> InterventionMode.MINDFUL_PAUSE
-    }
-
-    private fun parseTheme(raw: String?): AppThemeMode = when (raw?.uppercase()) {
-        "LIGHT" -> AppThemeMode.LIGHT
-        "DARK" -> AppThemeMode.DARK
-        "AMOLED" -> AppThemeMode.AMOLED
-        else -> AppThemeMode.SYSTEM
-    }
-
-    private fun encodeTargetsJson(targets: List<TargetAppConfig>): String {
-        val arr = JSONArray()
-        targets.forEach { t ->
-            arr.put(JSONObject().apply {
-                put("packageName", t.packageName)
-                put("displayName", t.displayName)
-                put("feedName", t.feedName)
-                put("platformKey", t.platformKey)
-                put("isEnabled", t.isEnabled)
-                put("mode", t.mode.name)
-            })
-        }
-        return arr.toString()
-    }
-
-    private fun parseTargetsJson(json: String): List<TargetAppConfig> {
-        val arr = JSONArray(json)
-        val parsed = mutableMapOf<String, TargetAppConfig>()
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            val pkg = o.optString("packageName")
-            if (pkg.isBlank()) continue
-            parsed[pkg] = TargetAppConfig(
-                packageName = pkg,
-                displayName = o.optString("displayName", SupportedTargets.labelForPackage(pkg)),
-                feedName = o.optString("feedName", "Short Video"),
-                platformKey = o.optString("platformKey", SupportedTargets.platformKeyForPackage(pkg)),
-                isEnabled = o.optBoolean("isEnabled", false),
-                mode = parseMode(o.optString("mode"))
-            )
-        }
-        return SupportedTargets.defaultTargets.map { def ->
-            parsed[def.packageName] ?: def
-        }
-    }
-
-    private fun encodeSchedulesJson(schedules: List<ScheduleItem>): String {
-        val arr = JSONArray()
-        schedules.forEach { s ->
-            arr.put(JSONObject().apply {
-                put("id", s.id)
-                put("title", s.title)
-                put("isActive", s.isActive)
-                put("daysOfWeek", JSONArray(s.daysOfWeek.sorted()))
-                put("startHour", s.startHour)
-                put("startMinute", s.startMinute)
-                put("endHour", s.endHour)
-                put("endMinute", s.endMinute)
-                put("enabledPackages", JSONArray(s.enabledPackages.toList()))
-                put("isQuickBoost", s.isQuickBoost)
-                if (s.expiresAtMillis != null) put("expiresAtMillis", s.expiresAtMillis)
-            })
-        }
-        return arr.toString()
-    }
-
-    private fun parseSchedulesJson(json: String): List<ScheduleItem> {
-        val arr = JSONArray(json)
-        val list = mutableListOf<ScheduleItem>()
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            val daysArr = o.optJSONArray("daysOfWeek") ?: JSONArray()
-            val days = buildSet {
-                for (d in 0 until daysArr.length()) add(daysArr.getInt(d))
-            }
-            val pkgsArr = o.optJSONArray("enabledPackages") ?: JSONArray()
-            val pkgs = buildSet {
-                for (p in 0 until pkgsArr.length()) add(pkgsArr.getString(p))
-            }
-            list.add(
-                ScheduleItem(
-                    id = o.optString("id", "sched_$i"),
-                    title = o.optString("title", "Focus Schedule"),
-                    isActive = o.optBoolean("isActive", true),
-                    daysOfWeek = days,
-                    startHour = o.optInt("startHour", 9),
-                    startMinute = o.optInt("startMinute", 0),
-                    endHour = o.optInt("endHour", 17),
-                    endMinute = o.optInt("endMinute", 0),
-                    enabledPackages = pkgs,
-                    isQuickBoost = o.optBoolean("isQuickBoost", false),
-                    expiresAtMillis = if (o.has("expiresAtMillis")) o.optLong("expiresAtMillis") else null
-                )
-            )
-        }
-        return list
-    }
+    private fun parseTheme(raw: String?): AppThemeMode = BackupCodec.parseTheme(raw)
+    private fun encodeTargetsJson(targets: List<TargetAppConfig>): String = BackupCodec.encodeTargetsJson(targets)
+    private fun parseTargetsJson(json: String): List<TargetAppConfig> = BackupCodec.parseTargetsJson(json)
+    private fun encodeSchedulesJson(schedules: List<ScheduleItem>): String = BackupCodec.encodeSchedulesJson(schedules)
+    private fun parseSchedulesJson(json: String): List<ScheduleItem> = BackupCodec.parseSchedulesJson(json)
 
     private fun encodeHistoryJson(records: List<HistoryRecord>): String {
         val arr = JSONArray()
@@ -439,9 +332,202 @@ class BlockReelsRepository(private val context: Context) {
                     packageName = pkg,
                     appLabel = o.optString("appLabel", SupportedTargets.labelForPackage(pkg)),
                     platformKey = o.optString("platformKey", SupportedTargets.platformKeyForPackage(pkg)),
-                    interventionMode = parseMode(o.optString("interventionMode")),
+                    interventionMode = NativeStateStore.parseInterventionMode(o.optString("interventionMode")),
                     diagnosticReason = o.optString("diagnosticReason", "REEL_CONTAINER_MATCH"),
                     estimatedMinutesSaved = o.optDouble("estimatedMinutesSaved", 2.5)
+                )
+            )
+        }
+        return list
+    }
+}
+
+/** Pure, Android-independent JSON serialization codec for configuration backups and rules. */
+object BackupCodec {
+    fun exportBackupJson(
+        settings: AppSettingsState,
+        targets: List<TargetAppConfig>,
+        schedules: List<ScheduleItem>
+    ): String {
+        val root = JSONObject().apply {
+            put("schemaVersion", 3)
+            put("exportedAt", System.currentTimeMillis())
+            put("settings", JSONObject().apply {
+                put("masterEnabled", settings.masterEnabled)
+                put("globalMode", settings.globalMode.name)
+                put("holdDurationSeconds", settings.holdDurationSeconds)
+                put("allowanceMinutes", settings.allowanceMinutes)
+                put("dailyPassLimit", settings.dailyPassLimit)
+                put("entryDelaySeconds", settings.entryDelaySeconds)
+                put("sensitivity", settings.sensitivity.name)
+                put("audioAction", settings.audioAction.name)
+                put("customMessage", settings.customMessage)
+                put("soundEnabled", settings.audioAction != AudioAction.NONE)
+                put("hapticsEnabled", settings.hapticsEnabled)
+                put("strictMode", settings.strictMode)
+                put("themeMode", settings.themeMode.name)
+            })
+            put("targets", JSONArray(encodeTargetsJson(targets)))
+            put("schedules", JSONArray(encodeSchedulesJson(schedules.filterNot { it.isQuickBoost })))
+        }
+        return root.toString(2)
+    }
+
+    fun parseAndValidateBackupJson(
+        rawJson: String,
+        currentSettings: AppSettingsState
+    ): Result<Triple<AppSettingsState, List<TargetAppConfig>, List<ScheduleItem>>> {
+        return runCatching {
+            val root = JSONObject(rawJson.trim())
+            val version = root.optInt("schemaVersion", -1)
+            require(version in 1..3) { "Unsupported backup schema version." }
+
+            val settingsObj = root.getJSONObject("settings")
+            val legacySound = settingsObj.optBoolean("soundEnabled", true)
+            val audioAction = settingsObj.optString("audioAction", "").takeIf { it.isNotBlank() }
+                ?.let(NativeStateStore::parseAudioAction)
+                ?: if (legacySound) AudioAction.SILENCE else AudioAction.NONE
+
+            val restoredSettings = currentSettings.copy(
+                masterEnabled = settingsObj.optBoolean("masterEnabled", true),
+                globalMode = NativeStateStore.parseInterventionMode(settingsObj.optString("globalMode")),
+                holdDurationSeconds = settingsObj.optInt("holdDurationSeconds", 5).coerceIn(3, 30),
+                allowanceMinutes = settingsObj.optInt("allowanceMinutes", 5).coerceIn(1, 30),
+                dailyPassLimit = settingsObj.optInt("dailyPassLimit", 0).coerceIn(0, 10),
+                entryDelaySeconds = settingsObj.optInt("entryDelaySeconds", 0).coerceIn(0, 10),
+                sensitivity = NativeStateStore.parseSensitivity(settingsObj.optString("sensitivity")),
+                audioAction = audioAction,
+                customMessage = settingsObj.optString(
+                    "customMessage",
+                    "Take a deep breath. Do you really want to scroll right now?"
+                ).take(240),
+                soundEnabled = audioAction != AudioAction.NONE,
+                hapticsEnabled = settingsObj.optBoolean("hapticsEnabled", true),
+                strictMode = settingsObj.optBoolean("strictMode", false),
+                themeMode = parseTheme(settingsObj.optString("themeMode"))
+            )
+
+            val restoredTargets = parseTargetsJson(root.getJSONArray("targets").toString())
+            require(restoredTargets.isNotEmpty()) { "Backup contains no target rules." }
+
+            val restoredSchedules = parseSchedulesJson(root.getJSONArray("schedules").toString())
+            Triple(restoredSettings, restoredTargets, restoredSchedules)
+        }
+    }
+
+    fun parseTheme(raw: String?): AppThemeMode = when (raw?.uppercase()) {
+        "LIGHT" -> AppThemeMode.LIGHT
+        "DARK" -> AppThemeMode.DARK
+        "AMOLED" -> AppThemeMode.AMOLED
+        else -> AppThemeMode.SYSTEM
+    }
+
+    fun encodeTargetsJson(targets: List<TargetAppConfig>): String {
+        val arr = JSONArray()
+        targets.forEach { t ->
+            arr.put(JSONObject().apply {
+                put("packageName", t.packageName)
+                put("displayName", t.displayName)
+                put("feedName", t.feedName)
+                put("platformKey", t.platformKey)
+                put("isEnabled", t.isEnabled)
+                put("mode", t.mode.name)
+                put("scope", t.scope.name)
+                if (t.holdDurationOverride != null) put("holdDurationOverride", t.holdDurationOverride)
+                if (t.allowanceMinutesOverride != null) put("allowanceMinutesOverride", t.allowanceMinutesOverride)
+                if (t.dailyPassLimitOverride != null) put("dailyPassLimitOverride", t.dailyPassLimitOverride)
+            })
+        }
+        return arr.toString()
+    }
+
+    fun parseTargetsJson(json: String): List<TargetAppConfig> {
+        val arr = JSONArray(json)
+        val parsed = mutableMapOf<String, TargetAppConfig>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val pkg = o.optString("packageName")
+            if (pkg.isBlank()) continue
+            parsed[pkg] = TargetAppConfig(
+                packageName = pkg,
+                displayName = o.optString("displayName", SupportedTargets.labelForPackage(pkg)),
+                feedName = o.optString("feedName", "Short Video"),
+                platformKey = o.optString("platformKey", SupportedTargets.platformKeyForPackage(pkg)),
+                isEnabled = o.optBoolean("isEnabled", false),
+                mode = NativeStateStore.parseInterventionMode(o.optString("mode")),
+                scope = NativeStateStore.parseBlockingScope(o.optString("scope")),
+                holdDurationOverride = if (o.has("holdDurationOverride") && !o.isNull("holdDurationOverride")) {
+                    o.optInt("holdDurationOverride").takeIf { it in 3..30 }
+                } else null,
+                allowanceMinutesOverride = if (o.has("allowanceMinutesOverride") && !o.isNull("allowanceMinutesOverride")) {
+                    o.optInt("allowanceMinutesOverride").takeIf { it in 1..30 }
+                } else null,
+                dailyPassLimitOverride = if (o.has("dailyPassLimitOverride") && !o.isNull("dailyPassLimitOverride")) {
+                    o.optInt("dailyPassLimitOverride").takeIf { it in 0..10 }
+                } else null
+            )
+        }
+        return SupportedTargets.defaultTargets.map { def ->
+            parsed[def.packageName] ?: def
+        }
+    }
+
+    fun encodeSchedulesJson(schedules: List<ScheduleItem>): String {
+        val arr = JSONArray()
+        schedules.forEach { s ->
+            arr.put(JSONObject().apply {
+                put("id", s.id)
+                put("title", s.title)
+                put("isActive", s.isActive)
+                put("daysOfWeek", JSONArray(s.daysOfWeek.sorted()))
+                put("startHour", s.startHour)
+                put("startMinute", s.startMinute)
+                put("endHour", s.endHour)
+                put("endMinute", s.endMinute)
+                put("enabledPackages", JSONArray(s.enabledPackages.toList()))
+                if (s.modeOverride != null) put("modeOverride", s.modeOverride.name)
+                if (s.scopeOverride != null) put("scopeOverride", s.scopeOverride.name)
+                put("isQuickBoost", s.isQuickBoost)
+                if (s.expiresAtMillis != null) put("expiresAtMillis", s.expiresAtMillis)
+            })
+        }
+        return arr.toString()
+    }
+
+    fun parseSchedulesJson(json: String): List<ScheduleItem> {
+        val arr = JSONArray(json)
+        val list = mutableListOf<ScheduleItem>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val daysArr = o.optJSONArray("daysOfWeek") ?: JSONArray()
+            val days = buildSet {
+                for (d in 0 until daysArr.length()) add(daysArr.getInt(d))
+            }
+            val pkgsArr = o.optJSONArray("enabledPackages") ?: JSONArray()
+            val pkgs = buildSet {
+                for (p in 0 until pkgsArr.length()) add(pkgsArr.getString(p))
+            }
+            val modeOverride = o.optString("modeOverride", "").takeIf { it.isNotBlank() }
+                ?.let(NativeStateStore::parseInterventionMode)
+            val scopeOverride = o.optString("scopeOverride", "").takeIf { it.isNotBlank() }
+                ?.let(NativeStateStore::parseBlockingScope)
+            list.add(
+                ScheduleItem(
+                    id = o.optString("id", "sched_$i"),
+                    title = o.optString("title", "Focus Schedule"),
+                    isActive = o.optBoolean("isActive", true),
+                    daysOfWeek = days,
+                    startHour = o.optInt("startHour", 9),
+                    startMinute = o.optInt("startMinute", 0),
+                    endHour = o.optInt("endHour", 17),
+                    endMinute = o.optInt("endMinute", 0),
+                    enabledPackages = pkgs,
+                    modeOverride = modeOverride,
+                    scopeOverride = scopeOverride,
+                    isQuickBoost = o.optBoolean("isQuickBoost", false),
+                    expiresAtMillis = if (o.has("expiresAtMillis") && !o.isNull("expiresAtMillis")) {
+                        o.optLong("expiresAtMillis")
+                    } else null
                 )
             )
         }

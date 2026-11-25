@@ -4,7 +4,8 @@ enum class AppPlatform(val packageName: String) {
     INSTAGRAM("com.instagram.android"),
     YOUTUBE("com.google.android.youtube"),
     FACEBOOK("com.facebook.katana"),
-    TIKTOK("com.zhiliaoapp.musically");
+    TIKTOK("com.zhiliaoapp.musically"),
+    SNAPCHAT("com.snapchat.android");
 
     companion object {
         internal const val FACEBOOK_LITE_PACKAGE = "com.facebook.lite"

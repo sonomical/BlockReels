@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
 import androidx.compose.foundation.Canvas
@@ -17,15 +18,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
-import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -63,6 +60,7 @@ import com.blockreels.app.data.StatsRange
 import com.blockreels.app.ui.components.ModeBadge
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.SectionHeader
+import com.blockreels.app.ui.components.TonalCard
 import com.blockreels.app.ui.components.formatDurationMinutes
 import com.blockreels.app.ui.components.formatRelativeTime
 import com.blockreels.app.ui.theme.MonoFontFamily
@@ -83,10 +81,8 @@ fun StatisticsScreen(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             icon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null) },
-            title = { Text("Clear Interception History?") },
-            text = {
-                Text("This permanently clears your local block counters and interception logs. Your rules and schedules remain untouched.")
-            },
+            title = { Text("Clear history?") },
+            text = { Text("Resets local block counters and logs. Rules and schedules stay intact.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -113,8 +109,8 @@ fun StatisticsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 680.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomContentPadding),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomContentPadding),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item(key = "range_selector") {
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -138,7 +134,7 @@ fun StatisticsScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         StatHeroTile(
-                            label = "Interceptions",
+                            label = "Blocked",
                             value = analytics.totalBlocks.toString(),
                             icon = Icons.Rounded.Shield,
                             container = MaterialTheme.colorScheme.primaryContainer,
@@ -146,7 +142,7 @@ fun StatisticsScreen(
                             modifier = Modifier.weight(1f)
                         )
                         StatHeroTile(
-                            label = "Time Reclaimed",
+                            label = "Reclaimed",
                             value = formatDurationMinutes(analytics.minutesSaved),
                             icon = Icons.Rounded.AccessTime,
                             container = MaterialTheme.colorScheme.secondaryContainer,
@@ -159,7 +155,7 @@ fun StatisticsScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         StatHeroTile(
-                            label = "Peak Distraction",
+                            label = "Peak Hour",
                             value = analytics.peakHourLabel,
                             icon = Icons.Rounded.Insights,
                             container = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -167,8 +163,8 @@ fun StatisticsScreen(
                             modifier = Modifier.weight(1f)
                         )
                         StatHeroTile(
-                            label = "Active Streak",
-                            value = "${analytics.streakDays} days",
+                            label = "Streak",
+                            value = "${analytics.streakDays}d",
                             icon = Icons.Rounded.LocalFireDepartment,
                             container = MaterialTheme.colorScheme.tertiaryContainer,
                             content = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -182,14 +178,15 @@ fun StatisticsScreen(
                 WeeklyActivityChartCard(series = analytics.dailySeries)
             }
 
-            item(key = "platform_breakdown") {
-                PlatformBreakdownCard(items = analytics.platformBreakdown)
+            if (analytics.platformBreakdown.isNotEmpty()) {
+                item(key = "platform_breakdown") {
+                    PlatformBreakdownCard(items = analytics.platformBreakdown)
+                }
             }
 
             item(key = "log_header") {
                 SectionHeader(
-                    title = "Interception Log",
-                    subtitle = "${uiState.history.size} recorded local events",
+                    title = "Log (${uiState.history.size})",
                     trailing = {
                         if (uiState.history.isNotEmpty()) {
                             TextButton(
@@ -205,29 +202,16 @@ fun StatisticsScreen(
 
             if (uiState.history.isEmpty()) {
                 item(key = "empty_log") {
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    TonalCard(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.BarChart,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
                             Text(
-                                text = "No interceptions yet",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "Your blocked Reels, Shorts, and TikTok feeds will populate charts and time-saved insights automatically.",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "No events recorded",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -235,19 +219,14 @@ fun StatisticsScreen(
                 }
             } else {
                 item(key = "history_log_card") {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        ),
-                        shape = MaterialTheme.shapes.large
-                    ) {
+                    TonalCard(modifier = Modifier.fillMaxWidth()) {
                         val visible = uiState.history.take(30)
                         Column {
                             visible.forEachIndexed { idx, record ->
                                 ListItem(
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                     leadingContent = {
-                                        PlatformAvatar(platformKey = record.platformKey, sizeDp = 40)
+                                        PlatformAvatar(platformKey = record.platformKey, sizeDp = 36)
                                     },
                                     headlineContent = {
                                         Text(
@@ -265,13 +244,13 @@ fun StatisticsScreen(
                                         )
                                     },
                                     trailingContent = {
-                                        ModeBadge(mode = record.interventionMode)
+                                        ModeBadge(mode = record.interventionMode, compact = true)
                                     }
                                 )
                                 if (idx < visible.lastIndex) {
                                     HorizontalDivider(
                                         modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                                     )
                                 }
                             }
@@ -281,7 +260,7 @@ fun StatisticsScreen(
             }
 
             item(key = "bottom_pad") {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     }
@@ -302,14 +281,14 @@ private fun StatHeroTile(
         color = container
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = content,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
             Text(
                 text = value,
@@ -329,21 +308,12 @@ private fun StatHeroTile(
 
 @Composable
 private fun WeeklyActivityChartCard(series: List<DayCountPoint>) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SectionHeader(
-                title = "7-Day Interception Trend",
-                subtitle = "Daily short-video impulses intercepted"
-            )
+            SectionHeader(title = "7-Day Trend")
 
             val maxCount = (series.maxOfOrNull { it.count } ?: 0).coerceAtLeast(1)
             val activeBarColor = MaterialTheme.colorScheme.primary
@@ -353,16 +323,15 @@ private fun WeeklyActivityChartCard(series: List<DayCountPoint>) {
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(148.dp)
+                    .height(132.dp)
             ) {
                 val count = series.size.coerceAtLeast(1)
                 val slotWidth = size.width / count
-                val barWidth = (slotWidth * 0.46f).coerceAtMost(32.dp.toPx())
-                val radius = CornerRadius(10.dp.toPx(), 10.dp.toPx())
+                val barWidth = (slotWidth * 0.46f).coerceAtMost(28.dp.toPx())
+                val radius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
 
                 series.forEachIndexed { index, point ->
                     val left = index * slotWidth + (slotWidth - barWidth) / 2f
-                    // Background track
                     drawRoundRect(
                         color = trackColor,
                         topLeft = Offset(left, 0f),
@@ -371,7 +340,7 @@ private fun WeeklyActivityChartCard(series: List<DayCountPoint>) {
                     )
                     val fraction = (point.count.toFloat() / maxCount.toFloat()).coerceIn(0f, 1f)
                     val barHeight = if (point.count > 0) {
-                        (size.height * fraction).coerceAtLeast(14.dp.toPx())
+                        (size.height * fraction).coerceAtLeast(12.dp.toPx())
                     } else 0f
                     if (barHeight > 0f) {
                         drawRoundRect(
@@ -412,55 +381,38 @@ private fun WeeklyActivityChartCard(series: List<DayCountPoint>) {
 
 @Composable
 private fun PlatformBreakdownCard(items: List<PlatformBreakdownItem>) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SectionHeader(
-                title = "Platform Breakdown",
-                subtitle = "Where your focus shield worked hardest"
-            )
-            if (items.isEmpty()) {
-                Text(
-                    text = "No platform data recorded for this range yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                items.forEach { item ->
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = item.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "${item.count} (${(item.fraction * 100).toInt()}%)",
-                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress = { item.fraction },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            strokeCap = StrokeCap.Round
+            SectionHeader(title = "By Platform")
+            items.forEach { item ->
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "${item.count} (${(item.fraction * 100).toInt()}%)",
+                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
+                    LinearProgressIndicator(
+                        progress = { item.fraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        strokeCap = StrokeCap.Round
+                    )
                 }
             }
         }
