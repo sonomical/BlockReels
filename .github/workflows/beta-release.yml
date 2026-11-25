@@ -2,16 +2,16 @@ name: Beta Release CD
 
 on:
   push:
-    branches: [beta]
+    branches: [main, beta]
     tags:
       - 'v*-beta*'
       - 'v*-rc*'
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Beta release tag (e.g. v1.1.0-beta.1)'
+        description: 'Beta release tag (e.g. v2.0.0-beta.1)'
         required: true
-        default: 'v1.1.0-beta.1'
+        default: 'v2.0.0-beta.1'
       release_notes:
         description: 'Optional extra beta release notes'
         required: false
@@ -34,15 +34,50 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      should_release: ${{ steps.meta.outputs.should_release }}
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Resolve beta release metadata
+        id: meta
+        run: |
+          VERSION_NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+          SHOULD_RELEASE="false"
+          TAG="v${VERSION_NAME:-2.0.0-beta.1}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.release_tag }}"
+            SHOULD_RELEASE="true"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            SHOULD_RELEASE="true"
+          elif [ "${{ github.ref }}" = "refs/heads/beta" ]; then
+            TAG="v${VERSION_NAME:-2.0.0-beta.1}"
+            SHOULD_RELEASE="true"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ] && [[ "$VERSION_NAME" == *beta* || "$VERSION_NAME" == *rc* ]]; then
+            TAG="v${VERSION_NAME}"
+            SHOULD_RELEASE="true"
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG should_release=$SHOULD_RELEASE (versionName=$VERSION_NAME)"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
+      - name: Accept Android SDK licenses
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -71,6 +106,7 @@ jobs:
   build-and-publish-beta:
     name: Build & Publish Beta Release
     needs: verify
+    if: needs.verify.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -78,25 +114,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Resolve beta tag name
-        id: meta
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.release_tag }}"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION_NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
-            SHORT_SHA="${GITHUB_SHA::7}"
-            TAG="v${VERSION_NAME:-1.1.0-beta.1}-${SHORT_SHA}"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
+      - name: Accept Android SDK licenses
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -125,7 +154,7 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           mkdir -p dist
-          TAG="${{ steps.meta.outputs.tag }}"
+          TAG="${{ needs.verify.outputs.tag }}"
           BUILD_TOOLS=$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
           ZIPALIGN="$BUILD_TOOLS/zipalign"
           APKSIGNER="$BUILD_TOOLS/apksigner"
@@ -173,21 +202,29 @@ jobs:
       - name: Upload Beta Artifacts to Workflow Run
         uses: actions/upload-artifact@v4
         with:
-          name: blockreels-beta-${{ steps.meta.outputs.tag }}
+          name: blockreels-beta-${{ needs.verify.outputs.tag }}
           path: dist/
           retention-days: 30
 
       - name: Publish GitHub Beta Pre-Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: BlockReels ${{ steps.meta.outputs.tag }} (Beta)
+          tag_name: ${{ needs.verify.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: BlockReels ${{ needs.verify.outputs.tag }} (Beta)
           prerelease: true
+          make_latest: false
           generate_release_notes: true
           body: |
-            ## BlockReels Beta Release (`${{ steps.meta.outputs.tag }}`)
+            ## BlockReels 2.0.0 Beta (`${{ needs.verify.outputs.tag }}`)
 
             ${{ inputs.release_notes }}
+
+            ### Highlights
+            - Custom Color Palette Studio with interactive hue bar, chroma/tone/surface-tint controls, harmonic auto-match, presets, and hex input
+            - Redesigned 50/50 Block Message screen and live overlay with full-bleed illustration and one bold, easy-to-read message
+            - Adaptive filter and Block Message preview toolbar for all screen widths and font scales
+            - Runtime and startup optimizations with R8 full-mode shrinking
 
             - **Signed with release keystore:** `${{ steps.sign.outputs.signed_release }}`
             - **Zero-network privacy check:** Passed (`android.permission.INTERNET` absent)

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.0-beta.1] - 2026-11-25
+
+### Added
+- **Custom Color Palette Studio**: full Material 3 tonal palette generator supporting Primary, Secondary, and Tertiary customization via hue bar, chroma/tone/surface-tint sliders, curated presets, one-tap Auto-Match harmony, and `#RRGGBB` hex input, persisted in DataStore and JSON backups.
+- **Automatic main-branch beta publishing**: `beta-release.yml` now triggers automatically for `-beta` versions pushed to `main` (in addition to `beta`, `v*-beta*` tags, and manual workflow dispatch), targeting `v2.0.0-beta.1`.
+
+### Changed
+- **50/50 Block Message & Live Overlay**: redesigned both the Block Message screen and runtime overlay into a 50% full-bleed illustration and 50% single strong message layout with streamlined one-message editing and quick presets.
+- **Adaptive Filter & Preview Bar**: replaced the fixed filter/message button row on the Apps screen with a responsive layout that dynamically adapts to screen width and font scale.
+- **Performance & Startup Optimizations**: enabled R8 full-mode shrinking/optimization, cached date-key lookups, memoized ViewModel/Compose hot paths, and fixed static initialization ordering in `NativeStateStore`.
+- Bumped app version to `2.0.0-beta.1` (`versionCode = 20000`).
+
 ## [1.1.0-beta.1] - 2026-11-25
 
 ### Added
