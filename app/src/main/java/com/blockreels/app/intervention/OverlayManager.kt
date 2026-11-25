@@ -99,8 +99,10 @@ class OverlayManager(private val context: Context) : InterventionOverlay {
             view.findViewById<ProgressBar>(R.id.pbHoldProgress)?.progress = 0
             view.findViewById<TextView>(R.id.tvHoldButtonText)?.text = "Hold for ${currentHoldSeconds}s"
             if (state == OverlayExitState.FAILED) {
-                view.findViewById<TextView>(R.id.tvOverlayMessage)?.text =
-                    context.getString(R.string.exit_not_confirmed_help)
+                view.findViewById<TextView>(R.id.tvOverlayMessage)?.apply {
+                    visibility = View.VISIBLE
+                    text = context.getString(R.string.exit_not_confirmed_help)
+                }
             }
         }
     }
@@ -173,8 +175,9 @@ class OverlayManager(private val context: Context) : InterventionOverlay {
             val btnGoBack = view.findViewById<View>(R.id.btnGoBack)
             val holdSection = view.findViewById<View>(R.id.holdSection)
 
-            tvTitle?.text = title
-            tvMessage?.text = message
+            val strongSingleMessage = message.trim().ifBlank { title }
+            tvTitle?.text = strongSingleMessage
+            tvMessage?.visibility = View.GONE
 
             btnGoBack?.setOnClickListener {
                 if (requestedIntervention != interventionId || exitStateId == interventionId) return@setOnClickListener
@@ -195,7 +198,7 @@ class OverlayManager(private val context: Context) : InterventionOverlay {
                 holdSection?.visibility = View.GONE
                 val quotaLocked = dailyPassLimit > 0 && passesUsedToday >= dailyPassLimit
                 tvEyebrow?.text = if (quotaLocked) "DAILY LIMIT" else "FOCUS LOCK"
-                tvMessage?.text = if (quotaLocked) {
+                tvTitle?.text = if (quotaLocked) {
                     context.getString(R.string.quota_exhausted_message)
                 } else {
                     context.getString(R.string.strict_mode_active)
