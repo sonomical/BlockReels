@@ -4,6 +4,7 @@ package com.blockreels.app.data
 import androidx.compose.runtime.Immutable
 import com.blockreels.app.state.AudioAction
 import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.ContentBlockPolicy
 import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionMode
 
@@ -12,6 +13,39 @@ enum class AppThemeMode(val label: String) {
     LIGHT("Light"),
     DARK("Dark"),
     AMOLED("AMOLED")
+}
+
+enum class AppColorSeed(val label: String, val swatchHex: Long) {
+    EMERALD("Emerald", 0xFF006B5E),
+    OCEAN("Ocean", 0xFF005AC1),
+    TERRACOTTA("Terracotta", 0xFF9C4327),
+    AMETHYST("Amethyst", 0xFF6B4FA2),
+    FOREST("Forest", 0xFF386A20),
+    GRAPHITE("Graphite", 0xFF475569)
+}
+
+enum class AppContrastLevel(val label: String) {
+    STANDARD("Standard"),
+    MEDIUM("Medium"),
+    HIGH("High")
+}
+
+enum class AppCornerStyle(val label: String) {
+    EXPRESSIVE("Expressive"),
+    BALANCED("Balanced"),
+    COMPACT("Compact")
+}
+
+enum class AppFontScale(val label: String, val multiplier: Float) {
+    COMPACT("Compact", 0.93f),
+    DEFAULT("Default", 1.0f),
+    LARGE("Large", 1.09f)
+}
+
+enum class AppIconStyle(val label: String) {
+    TONAL_COOKIE("Cookie"),
+    TONAL_SQUIRCLE("Squircle"),
+    NEUTRAL_TONAL("Soft Circle")
 }
 
 enum class ProtectionStatus {
@@ -35,6 +69,10 @@ data class TargetAppConfig(
     val isEnabled: Boolean,
     val mode: InterventionMode,
     val scope: BlockingScope = BlockingScope.FEED_ONLY,
+    val contentPolicy: ContentBlockPolicy = ContentBlockPolicy.REELS_ONLY,
+    val requestHideSurfaces: Boolean = false,
+    val reelsDailyGoalMinutes: Int = 15,
+    val feedDailyGoalMinutes: Int = 20,
     val holdDurationOverride: Int? = null,
     val allowanceMinutesOverride: Int? = null,
     val dailyPassLimitOverride: Int? = null,
@@ -42,6 +80,8 @@ data class TargetAppConfig(
 ) {
     val hasCustomOverrides: Boolean
         get() = scope != BlockingScope.FEED_ONLY ||
+            contentPolicy != ContentBlockPolicy.REELS_ONLY ||
+            requestHideSurfaces ||
             holdDurationOverride != null ||
             allowanceMinutesOverride != null ||
             dailyPassLimitOverride != null
@@ -100,7 +140,12 @@ data class AppSettingsState(
     val entryDelaySeconds: Int = 0, // 0 = Instant
     val sensitivity: DetectionSensitivity = DetectionSensitivity.BALANCED,
     val audioAction: AudioAction = AudioAction.SILENCE,
-    val customMessage: String = "Take a deep breath. Do you really want to scroll right now?",
+    val customMessageHeadline: String = "Pause before you scroll.",
+    val customMessage: String = "Take a deep breath. Do you really want to spend your focus here right now?",
+    val defaultContentPolicy: ContentBlockPolicy = ContentBlockPolicy.REELS_ONLY,
+    val defaultRequestHideSurfaces: Boolean = false,
+    val defaultReelsGoalMinutes: Int = 15,
+    val defaultFeedGoalMinutes: Int = 20,
     val soundEnabled: Boolean = true,
     val hapticsEnabled: Boolean = true,
     val pinProtected: Boolean = false,
@@ -108,6 +153,12 @@ data class AppSettingsState(
     val pinSalt: String = "",
     val strictMode: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    val dynamicColorEnabled: Boolean = false,
+    val colorSeed: AppColorSeed = AppColorSeed.EMERALD,
+    val contrastLevel: AppContrastLevel = AppContrastLevel.STANDARD,
+    val cornerStyle: AppCornerStyle = AppCornerStyle.EXPRESSIVE,
+    val fontScale: AppFontScale = AppFontScale.DEFAULT,
+    val iconStyle: AppIconStyle = AppIconStyle.TONAL_COOKIE,
     val onboardingCompleted: Boolean = false
 )
 

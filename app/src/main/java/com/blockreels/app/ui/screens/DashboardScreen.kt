@@ -26,14 +26,18 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.TimerOff
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.ViewStream
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -81,12 +85,14 @@ import com.blockreels.app.data.SupportedTargets
 import com.blockreels.app.data.SystemHealthState
 import com.blockreels.app.data.TargetAppConfig
 import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.ContentBlockPolicy
 import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.ui.components.AccessibilityDisclosureDialog
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
 import com.blockreels.app.ui.components.ExpressiveCard
 import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.ModeBadge
+import com.blockreels.app.ui.components.NumberInputDialog
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.SectionHeader
 import com.blockreels.app.ui.components.formatDurationMinutes
@@ -159,6 +165,19 @@ fun DashboardScreen(
                     onOpenStats = onNavigateToStats,
                     onOpenEngine = onNavigateToEngine,
                     onOpenSchedules = onNavigateToSchedules
+                )
+            }
+
+            // 3b. Active Content Policy & Daily Consumption Goals Strip
+            item(key = "policy_and_goals") {
+                PolicyAndGoalsSummaryCard(
+                    policy = uiState.settings.defaultContentPolicy,
+                    requestHideSurfaces = uiState.settings.defaultRequestHideSurfaces,
+                    reelsGoalMinutes = uiState.settings.defaultReelsGoalMinutes,
+                    feedGoalMinutes = uiState.settings.defaultFeedGoalMinutes,
+                    protectedAppsCount = uiState.enabledTargetsCount,
+                    totalAppsCount = uiState.targets.size,
+                    onOpenEngine = onNavigateToEngine
                 )
             }
 
@@ -1000,6 +1019,8 @@ private fun QuickLockSection(
                         }
                     )
 
+                    var showCustomDurationDialog by remember { mutableStateOf(false) }
+
                     val presets = listOf(15 to "15m", 30 to "30m", 60 to "1h", 120 to "2h")
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1027,6 +1048,62 @@ private fun QuickLockSection(
                                 )
                             }
                         }
+                    }
+
+                    Surface(
+                        onClick = { showCustomDurationDialog = true },
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("quick_boost_custom_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Custom Lock Duration",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                            Text(
+                                text = "5–480 min",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (showCustomDurationDialog) {
+                        NumberInputDialog(
+                            title = "Focus Lock Duration",
+                            initialValue = 45,
+                            range = 5..480,
+                            unitPluralLabel = "minutes",
+                            quickPresets = listOf(10, 20, 45, 90, 180, 240),
+                            presetLabel = { mins ->
+                                if (mins >= 60 && mins % 60 == 0) "${mins / 60}h" else "${mins}m"
+                            },
+                            confirmLabel = "Start Lock",
+                            onDismiss = { showCustomDurationDialog = false },
+                            onConfirm = { picked ->
+                                showCustomDurationDialog = false
+                                onStartBoost(picked, selectedBoostMode)
+                            }
+                        )
                     }
                 }
             }
@@ -1269,3 +1346,150 @@ private fun RecentInterceptionRow(
         }
     )
 }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PolicyAndGoalsSummaryCard(
+    policy: ContentBlockPolicy,
+    requestHideSurfaces: Boolean,
+    reelsGoalMinutes: Int,
+    feedGoalMinutes: Int,
+    protectedAppsCount: Int,
+    totalAppsCount: Int,
+    onOpenEngine: () -> Unit
+) {
+    Surface(
+        onClick = onOpenEngine,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dashboard_policy_goals_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Active Policy & Daily Goals",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "$protectedAppsCount of $totalAppsCount supported apps guarded",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Text(
+                        text = policy.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                GoalMiniTile(
+                    icon = Icons.Rounded.PlayCircle,
+                    label = "Reels Goal",
+                    value = if (reelsGoalMinutes == 0) "0m" else "${reelsGoalMinutes}m",
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.weight(1f)
+                )
+                GoalMiniTile(
+                    icon = Icons.Rounded.ViewStream,
+                    label = "Feed Goal",
+                    value = if (feedGoalMinutes == 0) "0m" else "${feedGoalMinutes}m",
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.weight(1f)
+                )
+                GoalMiniTile(
+                    icon = Icons.Rounded.VisibilityOff,
+                    label = "Don't Show",
+                    value = if (requestHideSurfaces || policy == ContentBlockPolicy.HIDE_SURFACES) "On" else "Off",
+                    containerColor = if (requestHideSurfaces || policy == ContentBlockPolicy.HIDE_SURFACES) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    contentColor = if (requestHideSurfaces || policy == ContentBlockPolicy.HIDE_SURFACES) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun GoalMiniTile(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    containerColor: Color,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = containerColor,
+        contentColor = contentColor
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = contentColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = MonoFontFamily,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = contentColor,
+                maxLines = 1
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (contentColor == MaterialTheme.colorScheme.onSurface) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    contentColor
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+

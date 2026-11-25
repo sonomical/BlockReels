@@ -4,9 +4,13 @@ package com.blockreels.app.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -26,9 +31,11 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -60,21 +67,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.BuildConfig
+import com.blockreels.app.data.AppColorSeed
+import com.blockreels.app.data.AppContrastLevel
+import com.blockreels.app.data.AppCornerStyle
+import com.blockreels.app.data.AppFontScale
+import com.blockreels.app.data.AppIconStyle
 import com.blockreels.app.data.AppThemeMode
 import com.blockreels.app.ui.components.AccessibilityDisclosureDialog
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
 import com.blockreels.app.ui.components.ExpressiveSwitch
+import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.SectionHeader
 import com.blockreels.app.ui.components.segmentedListShape
 import com.blockreels.app.viewmodel.BlockReelsUiState
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     uiState: BlockReelsUiState,
     bottomContentPadding: Dp = 24.dp,
     onToggleStrictMode: (Boolean) -> Unit,
     onSelectTheme: (AppThemeMode) -> Unit,
+    onToggleDynamicColor: (Boolean) -> Unit,
+    onSelectColorSeed: (AppColorSeed) -> Unit,
+    onSelectContrast: (AppContrastLevel) -> Unit,
+    onSelectCornerStyle: (AppCornerStyle) -> Unit,
+    onSelectFontScale: (AppFontScale) -> Unit,
+    onSelectIconStyle: (AppIconStyle) -> Unit,
     onRequestPinSetup: () -> Unit,
     onRequestDisablePin: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
@@ -88,6 +107,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val supportsDynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     var showImportDialog by remember { mutableStateOf(false) }
     var showDisclosureDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
@@ -101,16 +121,268 @@ fun SettingsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomContentPadding),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // Complete Material 3 Expressive Appearance & Theme Studio
             item(key = "appearance_section") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionHeader(title = "Appearance")
-                    ConnectedToggleButtonGroup(
-                        options = AppThemeMode.entries,
-                        selected = uiState.settings.themeMode,
-                        onSelect = onSelectTheme,
-                        label = { it.label },
-                        tagFor = { "settings_theme_${it.name.lowercase()}" }
-                    )
+                    SectionHeader(title = "Appearance & Theme Studio")
+
+                    // Live M3 Theme Preview Banner
+                    Surface(
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Surface(
+                                        shape = MaterialShapes.Cookie7Sided.toShape(),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(38.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Palette,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Column {
+                                        Text(
+                                            text = if (uiState.settings.dynamicColorEnabled && supportsDynamicColor) {
+                                                "Material You · ${uiState.settings.themeMode.label}"
+                                            } else {
+                                                "${uiState.settings.colorSeed.label} · ${uiState.settings.themeMode.label}"
+                                            },
+                                            style = MaterialTheme.typography.titleMediumEmphasized
+                                        )
+                                        Text(
+                                            text = "${uiState.settings.cornerStyle.label} corners · ${uiState.settings.contrastLevel.label} contrast · ${uiState.settings.fontScale.label} text",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                listOf(
+                                    "INSTAGRAM" to "com.instagram.android",
+                                    "YOUTUBE" to "com.google.android.youtube",
+                                    "TIKTOK" to "com.zhiliaoapp.musically",
+                                    "FACEBOOK" to "com.facebook.katana",
+                                    "SNAPCHAT" to "com.snapchat.android"
+                                ).forEach { (platformKey, pkg) ->
+                                    PlatformAvatar(
+                                        platformKey = platformKey,
+                                        packageName = pkg,
+                                        sizeDp = 34,
+                                        active = true
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Theme Controls Segmented Stack
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // 1. Light / Dark / AMOLED / System
+                        Surface(
+                            shape = segmentedListShape(0, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("Theme Mode", style = MaterialTheme.typography.titleSmall)
+                                ConnectedToggleButtonGroup(
+                                    options = AppThemeMode.entries,
+                                    selected = uiState.settings.themeMode,
+                                    onSelect = onSelectTheme,
+                                    label = { it.label },
+                                    tagFor = { "settings_theme_${it.name.lowercase()}" }
+                                )
+                            }
+                        }
+
+                        // 2. Dynamic Color (Material You)
+                        Surface(
+                            shape = segmentedListShape(1, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = {
+                                    SettingsIconBadge(
+                                        icon = Icons.Rounded.Wallpaper,
+                                        container = MaterialTheme.colorScheme.secondaryContainer,
+                                        content = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                },
+                                headlineContent = { Text("Dynamic Color (Wallpaper)") },
+                                supportingContent = {
+                                    Text(
+                                        if (supportsDynamicColor) "Match your Android wallpaper colors"
+                                        else "Requires Android 12 or newer"
+                                    )
+                                },
+                                trailingContent = {
+                                    ExpressiveSwitch(
+                                        checked = uiState.settings.dynamicColorEnabled && supportsDynamicColor,
+                                        enabled = supportsDynamicColor,
+                                        onCheckedChange = onToggleDynamicColor,
+                                        modifier = Modifier.testTag("settings_dynamic_color_switch")
+                                    )
+                                }
+                            )
+                        }
+
+                        // 3. Color Palette Seed Swatches
+                        Surface(
+                            shape = segmentedListShape(2, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Accent Color Palette", style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        text = if (uiState.settings.dynamicColorEnabled && supportsDynamicColor) {
+                                            "Wallpaper"
+                                        } else {
+                                            uiState.settings.colorSeed.label
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    AppColorSeed.entries.forEach { seed ->
+                                        val selected = !uiState.settings.dynamicColorEnabled &&
+                                            uiState.settings.colorSeed == seed
+                                        ColorSeedSwatch(
+                                            seed = seed,
+                                            selected = selected,
+                                            onClick = { onSelectColorSeed(seed) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Contrast Level
+                        Surface(
+                            shape = segmentedListShape(3, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("Contrast Level", style = MaterialTheme.typography.titleSmall)
+                                ConnectedToggleButtonGroup(
+                                    options = AppContrastLevel.entries,
+                                    selected = uiState.settings.contrastLevel,
+                                    onSelect = onSelectContrast,
+                                    label = { it.label },
+                                    tagFor = { "settings_contrast_${it.name.lowercase()}" }
+                                )
+                            }
+                        }
+
+                        // 5. Corner / Shape Style
+                        Surface(
+                            shape = segmentedListShape(4, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("Shape & Corners", style = MaterialTheme.typography.titleSmall)
+                                ConnectedToggleButtonGroup(
+                                    options = AppCornerStyle.entries,
+                                    selected = uiState.settings.cornerStyle,
+                                    onSelect = onSelectCornerStyle,
+                                    label = { it.label },
+                                    tagFor = { "settings_corners_${it.name.lowercase()}" }
+                                )
+                            }
+                        }
+
+                        // 6. Typography Scale
+                        Surface(
+                            shape = segmentedListShape(5, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("Typography Size", style = MaterialTheme.typography.titleSmall)
+                                ConnectedToggleButtonGroup(
+                                    options = AppFontScale.entries,
+                                    selected = uiState.settings.fontScale,
+                                    onSelect = onSelectFontScale,
+                                    label = { it.label },
+                                    tagFor = { "settings_font_${it.name.lowercase()}" }
+                                )
+                            }
+                        }
+
+                        // 7. Themed App Icon Shape & Tone
+                        Surface(
+                            shape = segmentedListShape(6, 7),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("Themed App Icons", style = MaterialTheme.typography.titleSmall)
+                                ConnectedToggleButtonGroup(
+                                    options = AppIconStyle.entries,
+                                    selected = uiState.settings.iconStyle,
+                                    onSelect = onSelectIconStyle,
+                                    label = { it.label },
+                                    tagFor = { "settings_icon_style_${it.name.lowercase()}" }
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -282,7 +554,7 @@ fun SettingsScreen(
                                     )
                                 },
                                 headlineContent = { Text("Export JSON") },
-                                supportingContent = { Text("Copy rules and schedules to clipboard") }
+                                supportingContent = { Text("Copy rules, goals, theme, and schedules") }
                             )
                         }
 
@@ -512,6 +784,52 @@ fun SettingsScreen(
                 ) { Text("Close") }
             }
         )
+    }
+}
+
+@Composable
+private fun ColorSeedSwatch(
+    seed: AppColorSeed,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier.testTag("settings_seed_${seed.name.lowercase()}")
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = Color(seed.swatchHex),
+                contentColor = Color.White,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = "Selected ${seed.label}",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+            Text(
+                text = seed.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 

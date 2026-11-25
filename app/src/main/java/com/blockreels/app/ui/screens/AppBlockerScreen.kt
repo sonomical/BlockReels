@@ -21,7 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayCircleOutline
@@ -29,7 +31,7 @@ import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material.icons.rounded.Vibration
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,7 +43,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +52,7 @@ import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,29 +62,32 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.blockreels.app.data.TargetAppConfig
 import com.blockreels.app.state.AudioAction
 import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.ContentBlockPolicy
 import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
 import com.blockreels.app.ui.components.ExpressiveCard
+import com.blockreels.app.ui.components.ExpressiveNumberSelector
 import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.ModeBadge
+import com.blockreels.app.ui.components.OptionalExpressiveNumberSelector
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.ScopeBadge
 import com.blockreels.app.ui.components.SectionHeader
 import com.blockreels.app.ui.components.segmentedListShape
 import com.blockreels.app.ui.theme.MonoFontFamily
 import com.blockreels.app.viewmodel.BlockReelsUiState
-import kotlin.math.roundToInt
 
 private enum class EngineSection(val label: String) {
-    TARGETS("Targets"),
-    PARAMETERS("Parameters")
+    TARGETS("Apps & Goals"),
+    PARAMETERS("Engine Rules")
 }
 
 private enum class TargetFilter(val label: String) {
@@ -98,6 +103,16 @@ fun AppBlockerScreen(
     bottomContentPadding: Dp = 24.dp,
     onToggleTarget: (String, Boolean) -> Unit,
     onUpdateTargetRule: (TargetAppConfig) -> Unit,
+    onUpdateDefaultContentPolicy: (ContentBlockPolicy) -> Unit,
+    onUpdateDefaultRequestHide: (Boolean) -> Unit,
+    onUpdateDefaultReelsGoal: (Int) -> Unit,
+    onUpdateDefaultFeedGoal: (Int) -> Unit,
+    onApplyPolicyAndGoalsToAll: (
+        policy: ContentBlockPolicy,
+        requestHide: Boolean,
+        reelsGoalMinutes: Int,
+        feedGoalMinutes: Int
+    ) -> Unit,
     onUpdateGlobalMode: (InterventionMode) -> Unit,
     onUpdateHoldDuration: (Int) -> Unit,
     onUpdateAllowanceMinutes: (Int) -> Unit,
@@ -105,15 +120,13 @@ fun AppBlockerScreen(
     onUpdateEntryDelaySeconds: (Int) -> Unit,
     onUpdateSensitivity: (DetectionSensitivity) -> Unit,
     onUpdateAudioAction: (AudioAction) -> Unit,
-    onUpdateCustomMessage: (String) -> Unit,
     onToggleHaptics: (Boolean) -> Unit,
-    onOpenPreviewOverlay: () -> Unit,
+    onOpenBlockMessageScreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var section by remember { mutableStateOf(EngineSection.TARGETS) }
     var filter by remember { mutableStateOf(TargetFilter.ALL) }
     var editingTarget by remember { mutableStateOf<TargetAppConfig?>(null) }
-    var showPromptDialog by remember { mutableStateOf(false) }
 
     val filteredTargets = remember(uiState.targets, filter) {
         when (filter) {
@@ -150,17 +163,17 @@ fun AppBlockerScreen(
                         modifier = Modifier.weight(1f)
                     )
                     EngineStatPill(
-                        label = "Installed",
-                        value = uiState.installedTargetsCount.toString(),
-                        container = MaterialTheme.colorScheme.surfaceContainerLow,
-                        content = MaterialTheme.colorScheme.onSurface,
+                        label = "Policy",
+                        value = uiState.settings.defaultContentPolicy.shortLabel,
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.weight(1f)
                     )
                     EngineStatPill(
-                        label = "Default",
+                        label = "Action",
                         value = activeMode.shortLabel,
-                        container = MaterialTheme.colorScheme.secondaryContainer,
-                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                        container = MaterialTheme.colorScheme.surfaceContainerLow,
+                        content = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -177,6 +190,29 @@ fun AppBlockerScreen(
             }
 
             if (section == EngineSection.TARGETS) {
+                // Universal Blocking Policy & Daily Consumption Goals Card
+                item(key = "universal_policy_and_goals") {
+                    UniversalBlockingAndGoalsCard(
+                        policy = uiState.settings.defaultContentPolicy,
+                        requestHide = uiState.settings.defaultRequestHideSurfaces,
+                        reelsGoalMinutes = uiState.settings.defaultReelsGoalMinutes,
+                        feedGoalMinutes = uiState.settings.defaultFeedGoalMinutes,
+                        totalAppsCount = uiState.targets.size,
+                        onSelectPolicy = onUpdateDefaultContentPolicy,
+                        onToggleRequestHide = onUpdateDefaultRequestHide,
+                        onChangeReelsGoal = onUpdateDefaultReelsGoal,
+                        onChangeFeedGoal = onUpdateDefaultFeedGoal,
+                        onApplyToAll = {
+                            onApplyPolicyAndGoalsToAll(
+                                uiState.settings.defaultContentPolicy,
+                                uiState.settings.defaultRequestHideSurfaces,
+                                uiState.settings.defaultReelsGoalMinutes,
+                                uiState.settings.defaultFeedGoalMinutes
+                            )
+                        }
+                    )
+                }
+
                 item(key = "filter_bar") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -199,7 +235,7 @@ fun AppBlockerScreen(
                             }
                         }
                         FilledTonalButton(
-                            onClick = onOpenPreviewOverlay,
+                            onClick = onOpenBlockMessageScreen,
                             shapes = ButtonDefaults.shapes(),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("apps_preview_overlay_btn")
@@ -210,7 +246,7 @@ fun AppBlockerScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Test")
+                            Text("Message")
                         }
                     }
                 }
@@ -268,11 +304,12 @@ fun AppBlockerScreen(
                         holdDurationSeconds = uiState.settings.holdDurationSeconds,
                         allowanceMinutes = uiState.settings.allowanceMinutes,
                         dailyPassLimit = uiState.settings.dailyPassLimit,
+                        customHeadline = uiState.settings.customMessageHeadline,
                         customMessage = uiState.settings.customMessage,
                         onChangeHold = onUpdateHoldDuration,
                         onChangeAllowance = onUpdateAllowanceMinutes,
                         onChangeDailyLimit = onUpdateDailyPassLimit,
-                        onEditPrompt = { showPromptDialog = true }
+                        onOpenBlockMessageScreen = onOpenBlockMessageScreen
                     )
                 }
 
@@ -282,7 +319,7 @@ fun AppBlockerScreen(
                         hapticsEnabled = uiState.settings.hapticsEnabled,
                         onSelectAudio = onUpdateAudioAction,
                         onToggleHaptics = onToggleHaptics,
-                        onOpenPreview = onOpenPreviewOverlay
+                        onOpenPreview = onOpenBlockMessageScreen
                     )
                 }
             }
@@ -303,34 +340,156 @@ fun AppBlockerScreen(
             }
         )
     }
+}
 
-    if (showPromptDialog) {
-        var draft by remember { mutableStateOf(uiState.settings.customMessage) }
-        AlertDialog(
-            onDismissRequest = { showPromptDialog = false },
-            title = { Text("Pause Prompt") },
-            text = {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    minLines = 2,
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onUpdateCustomMessage(draft)
-                        showPromptDialog = false
-                    },
-                    shapes = ButtonDefaults.shapes()
-                ) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPromptDialog = false }) { Text("Cancel") }
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
+@Composable
+private fun UniversalBlockingAndGoalsCard(
+    policy: ContentBlockPolicy,
+    requestHide: Boolean,
+    reelsGoalMinutes: Int,
+    feedGoalMinutes: Int,
+    totalAppsCount: Int,
+    onSelectPolicy: (ContentBlockPolicy) -> Unit,
+    onToggleRequestHide: (Boolean) -> Unit,
+    onChangeReelsGoal: (Int) -> Unit,
+    onChangeFeedGoal: (Int) -> Unit,
+    onApplyToAll: () -> Unit
+) {
+    ExpressiveCard(
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "What to Block & Daily Goals",
+                        style = MaterialTheme.typography.titleMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = policy.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Text(
+                        text = policy.shortLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
             }
-        )
+
+            // Block Reels / Block Feed / Block Both / Don't Show
+            ConnectedToggleButtonGroup(
+                options = ContentBlockPolicy.entries,
+                selected = policy,
+                onSelect = onSelectPolicy,
+                label = { it.shortLabel },
+                tagFor = { "policy_${it.name.lowercase()}" }
+            )
+
+            // Request not to see them toggle
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Rounded.VisibilityOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text = "Request not to see them",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Auto-dismiss feed and reels surfaces immediately",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingContent = {
+                        ExpressiveSwitch(
+                            checked = requestHide || policy == ContentBlockPolicy.HIDE_SURFACES,
+                            onCheckedChange = onToggleRequestHide,
+                            modifier = Modifier.testTag("policy_request_hide_switch")
+                        )
+                    }
+                )
+            }
+
+            // Daily Consumption Goal: Reels / Shorts (Quick presets + Custom 0..180m)
+            ExpressiveNumberSelector(
+                title = "Reels / Shorts daily goal",
+                value = reelsGoalMinutes,
+                range = 0..180,
+                step = 5,
+                quickPresets = listOf(0, 5, 10, 15, 30, 45, 60),
+                unitPluralLabel = "min",
+                valueFormatter = { if (it == 0) "0m (Block)" else "${it}m / day" },
+                presetLabel = { if (it == 0) "0m" else "${it}m" },
+                leadingIcon = Icons.Rounded.Flag,
+                accentSecondary = false,
+                tagPrefix = "goal_reels",
+                onValueChange = onChangeReelsGoal
+            )
+
+            // Daily Consumption Goal: Main Feed (Quick presets + Custom 0..180m)
+            ExpressiveNumberSelector(
+                title = "Main Feed daily goal",
+                value = feedGoalMinutes,
+                range = 0..180,
+                step = 5,
+                quickPresets = listOf(0, 10, 20, 30, 45, 60, 90),
+                unitPluralLabel = "min",
+                valueFormatter = { if (it == 0) "0m (Block)" else "${it}m / day" },
+                presetLabel = { if (it == 0) "0m" else "${it}m" },
+                leadingIcon = Icons.Rounded.Flag,
+                accentSecondary = true,
+                tagPrefix = "goal_feed",
+                onValueChange = onChangeFeedGoal
+            )
+
+            Button(
+                onClick = onApplyToAll,
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("apply_policy_all_apps_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DoneAll,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Apply to All $totalAppsCount Supported Apps")
+            }
+        }
     }
 }
 
@@ -368,6 +527,7 @@ private fun EngineStatPill(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TargetRuleCard(
     target: TargetAppConfig,
@@ -436,9 +596,11 @@ private fun TargetRuleCard(
                         }
                     }
                     Text(
-                        text = target.feedName,
+                        text = "${target.feedName} · Goals: Reels ${target.reelsDailyGoalMinutes}m · Feed ${target.feedDailyGoalMinutes}m",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 ExpressiveSwitch(
@@ -454,12 +616,27 @@ private fun TargetRuleCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        ) {
+                            Text(
+                                text = target.contentPolicy.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
                         ModeBadge(mode = effectiveMode, compact = true)
-                        ScopeBadge(scope = target.scope)
+                        if (target.scope == BlockingScope.ENTIRE_APP) {
+                            ScopeBadge(scope = target.scope)
+                        }
                         if (effectiveMode == InterventionMode.MINDFUL_PAUSE) {
                             val spec = buildString {
                                 append("${effectiveHold}s / ${effectiveAllowance}m")
@@ -468,10 +645,12 @@ private fun TargetRuleCard(
                             Text(
                                 text = spec,
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.align(Alignment.CenterVertically)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -658,34 +837,18 @@ private fun EngineDetectionSection(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "Entry Grace Delay", style = MaterialTheme.typography.titleSmall)
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            Text(
-                                text = if (entryDelaySeconds == 0) "Instant" else "${entryDelaySeconds}s",
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                    ConnectedToggleButtonGroup(
-                        options = listOf(0, 2, 5, 10),
-                        selected = entryDelaySeconds,
-                        onSelect = onSelectEntryDelay,
-                        label = { if (it == 0) "Instant" else "${it}s" },
-                        tagFor = { "engine_delay_$it" }
+                Box(modifier = Modifier.padding(16.dp)) {
+                    ExpressiveNumberSelector(
+                        title = "Entry Grace Delay",
+                        value = entryDelaySeconds,
+                        range = 0..10,
+                        step = 1,
+                        quickPresets = listOf(0, 2, 5, 10),
+                        unitPluralLabel = "sec",
+                        valueFormatter = { if (it == 0) "Instant" else "${it}s" },
+                        presetLabel = { if (it == 0) "Instant" else "${it}s" },
+                        tagPrefix = "engine_delay",
+                        onValueChange = onSelectEntryDelay
                     )
                 }
             }
@@ -699,11 +862,12 @@ private fun EngineFrictionSection(
     holdDurationSeconds: Int,
     allowanceMinutes: Int,
     dailyPassLimit: Int,
+    customHeadline: String,
     customMessage: String,
     onChangeHold: (Int) -> Unit,
     onChangeAllowance: (Int) -> Unit,
     onChangeDailyLimit: (Int) -> Unit,
-    onEditPrompt: () -> Unit
+    onOpenBlockMessageScreen: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title = "Mindful Pause & Quotas")
@@ -713,34 +877,18 @@ private fun EngineFrictionSection(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Hold Duration", style = MaterialTheme.typography.titleSmall)
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            Text(
-                                text = "${holdDurationSeconds}s",
-                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                    Slider(
-                        value = holdDurationSeconds.toFloat(),
-                        onValueChange = { onChangeHold(it.roundToInt()) },
-                        valueRange = 3f..30f,
-                        steps = 26,
-                        modifier = Modifier.testTag("engine_hold_slider")
+                Box(modifier = Modifier.padding(16.dp)) {
+                    ExpressiveNumberSelector(
+                        title = "Hold Duration",
+                        value = holdDurationSeconds,
+                        range = 3..30,
+                        step = 1,
+                        quickPresets = listOf(3, 5, 10, 15, 20, 30),
+                        unitPluralLabel = "sec",
+                        valueFormatter = { "${it}s" },
+                        presetLabel = { "${it}s" },
+                        tagPrefix = "engine_hold",
+                        onValueChange = onChangeHold
                     )
                 }
             }
@@ -750,35 +898,20 @@ private fun EngineFrictionSection(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Pass Duration", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = "${allowanceMinutes}m",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(1, 2, 5, 10, 15, 30).forEach { mins ->
-                            FilterChip(
-                                selected = allowanceMinutes == mins,
-                                onClick = { onChangeAllowance(mins) },
-                                label = { Text("${mins}m") },
-                                modifier = Modifier.testTag("engine_pass_${mins}m")
-                            )
-                        }
-                    }
+                Box(modifier = Modifier.padding(16.dp)) {
+                    ExpressiveNumberSelector(
+                        title = "Pass Duration",
+                        value = allowanceMinutes,
+                        range = 1..30,
+                        step = 1,
+                        quickPresets = listOf(1, 2, 5, 10, 15, 30),
+                        unitPluralLabel = "min",
+                        valueFormatter = { "${it}m" },
+                        presetLabel = { "${it}m" },
+                        accentSecondary = true,
+                        tagPrefix = "engine_pass",
+                        onValueChange = onChangeAllowance
+                    )
                 }
             }
 
@@ -787,40 +920,24 @@ private fun EngineFrictionSection(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Daily Pass Cap", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = if (dailyPassLimit == 0) "Unlimited" else "$dailyPassLimit / day",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(0 to "Off", 1 to "1", 2 to "2", 3 to "3", 5 to "5", 10 to "10").forEach { (limit, label) ->
-                            FilterChip(
-                                selected = dailyPassLimit == limit,
-                                onClick = { onChangeDailyLimit(limit) },
-                                label = { Text(label) },
-                                modifier = Modifier.testTag("engine_quota_$limit")
-                            )
-                        }
-                    }
+                Box(modifier = Modifier.padding(16.dp)) {
+                    ExpressiveNumberSelector(
+                        title = "Daily Pass Cap",
+                        value = dailyPassLimit,
+                        range = 0..10,
+                        step = 1,
+                        quickPresets = listOf(0, 1, 2, 3, 5, 10),
+                        unitPluralLabel = "passes",
+                        valueFormatter = { if (it == 0) "Unlimited" else "$it / day" },
+                        presetLabel = { if (it == 0) "Off" else "$it" },
+                        tagPrefix = "engine_quota",
+                        onValueChange = onChangeDailyLimit
+                    )
                 }
             }
 
             Surface(
-                onClick = onEditPrompt,
+                onClick = onOpenBlockMessageScreen,
                 shape = segmentedListShape(3, 4),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
@@ -830,8 +947,14 @@ private fun EngineFrictionSection(
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Icon(Icons.Rounded.EditNote, contentDescription = null) },
-                    headlineContent = { Text("Pause Prompt") },
-                    supportingContent = { Text(customMessage, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    headlineContent = { Text("Block Message Screen") },
+                    supportingContent = {
+                        Text(
+                            text = "$customHeadline — $customMessage",
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 )
             }
         }
@@ -908,7 +1031,7 @@ private fun EngineFeedbackSection(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Test Pause Overlay")
+                        Text("Open Block Message Screen")
                     }
                 }
             }
@@ -929,6 +1052,10 @@ private fun TargetRuleEditorSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var enabled by remember { mutableStateOf(target.isEnabled) }
+    var contentPolicy by remember { mutableStateOf(target.contentPolicy) }
+    var requestHide by remember { mutableStateOf(target.requestHideSurfaces) }
+    var reelsGoal by remember { mutableIntStateOf(target.reelsDailyGoalMinutes) }
+    var feedGoal by remember { mutableIntStateOf(target.feedDailyGoalMinutes) }
     var scope by remember { mutableStateOf(target.scope) }
     var mode by remember { mutableStateOf(target.mode) }
     var holdOverride by remember { mutableStateOf(target.holdDurationOverride) }
@@ -936,6 +1063,8 @@ private fun TargetRuleEditorSheet(
     var limitOverride by remember { mutableStateOf(target.dailyPassLimitOverride) }
 
     val hasAnyOverride = scope != BlockingScope.FEED_ONLY ||
+        contentPolicy != ContentBlockPolicy.REELS_ONLY ||
+        requestHide ||
         holdOverride != null ||
         allowanceOverride != null ||
         limitOverride != null
@@ -976,12 +1105,72 @@ private fun TargetRuleEditorSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Blocking Scope", style = MaterialTheme.typography.titleSmall)
+                Text("What to Block", style = MaterialTheme.typography.titleSmall)
+                ConnectedToggleButtonGroup(
+                    options = ContentBlockPolicy.entries,
+                    selected = contentPolicy,
+                    onSelect = {
+                        contentPolicy = it
+                        if (it == ContentBlockPolicy.HIDE_SURFACES) requestHide = true
+                    },
+                    label = { it.shortLabel },
+                    tagFor = { "sheet_policy_${it.name.lowercase()}" }
+                )
+            }
+
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text("Request not to see them", style = MaterialTheme.typography.titleSmall) },
+                    supportingContent = { Text("Immediately hide and dismiss detected feeds") },
+                    trailingContent = {
+                        ExpressiveSwitch(
+                            checked = requestHide,
+                            onCheckedChange = { requestHide = it }
+                        )
+                    }
+                )
+            }
+
+            ExpressiveNumberSelector(
+                title = "Reels Daily Goal",
+                value = reelsGoal,
+                range = 0..180,
+                step = 5,
+                quickPresets = listOf(0, 10, 15, 30, 45, 60),
+                unitPluralLabel = "min",
+                valueFormatter = { if (it == 0) "0m (Block)" else "${it}m / day" },
+                presetLabel = { if (it == 0) "0m" else "${it}m" },
+                tagPrefix = "sheet_reels_goal",
+                onValueChange = { reelsGoal = it }
+            )
+
+            ExpressiveNumberSelector(
+                title = "Main Feed Daily Goal",
+                value = feedGoal,
+                range = 0..180,
+                step = 5,
+                quickPresets = listOf(0, 15, 20, 30, 45, 60),
+                unitPluralLabel = "min",
+                valueFormatter = { if (it == 0) "0m (Block)" else "${it}m / day" },
+                presetLabel = { if (it == 0) "0m" else "${it}m" },
+                accentSecondary = true,
+                tagPrefix = "sheet_feed_goal",
+                onValueChange = { feedGoal = it }
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("App Scope", style = MaterialTheme.typography.titleSmall)
                 ConnectedToggleButtonGroup(
                     options = BlockingScope.entries,
                     selected = scope,
                     onSelect = { scope = it },
-                    label = { it.displayName }
+                    label = { it.displayName },
+                    tagFor = { "sheet_scope_${it.name.lowercase()}" }
                 )
             }
 
@@ -992,95 +1181,53 @@ private fun TargetRuleEditorSheet(
                     selected = if (strictLocked) InterventionMode.STRICT_BLOCK else mode,
                     onSelect = { mode = it },
                     enabled = !strictLocked,
-                    label = { it.shortLabel }
+                    label = { it.shortLabel },
+                    tagFor = { "sheet_mode_${it.name.lowercase()}" }
                 )
             }
 
-            if (mode == InterventionMode.MINDFUL_PAUSE && !strictLocked) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Hold Override", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = holdOverride?.let { "${it}s" } ?: "Global (${globalHoldSeconds}s)",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = holdOverride == null,
-                            onClick = { holdOverride = null },
-                            label = { Text("Global") }
-                        )
-                        listOf(3, 5, 10, 15, 30).forEach { sec ->
-                            FilterChip(
-                                selected = holdOverride == sec,
-                                onClick = { holdOverride = sec },
-                                label = { Text("${sec}s") }
-                            )
-                        }
-                    }
-                }
+            if (!strictLocked && mode == InterventionMode.MINDFUL_PAUSE) {
+                OptionalExpressiveNumberSelector(
+                    title = "Hold Override",
+                    value = holdOverride,
+                    defaultValue = globalHoldSeconds,
+                    range = 3..30,
+                    step = 1,
+                    quickPresets = listOf(3, 5, 10, 15, 20),
+                    unitPluralLabel = "sec",
+                    valueFormatter = { "${it}s" },
+                    presetLabel = { "${it}s" },
+                    tagPrefix = "sheet_hold_override",
+                    onValueChange = { holdOverride = it }
+                )
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Pass Length Override", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = allowanceOverride?.let { "${it}m" } ?: "Global (${globalAllowanceMinutes}m)",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = allowanceOverride == null,
-                            onClick = { allowanceOverride = null },
-                            label = { Text("Global") }
-                        )
-                        listOf(1, 2, 5, 10, 15).forEach { min ->
-                            FilterChip(
-                                selected = allowanceOverride == min,
-                                onClick = { allowanceOverride = min },
-                                label = { Text("${min}m") }
-                            )
-                        }
-                    }
-                }
+                OptionalExpressiveNumberSelector(
+                    title = "Pass Length Override",
+                    value = allowanceOverride,
+                    defaultValue = globalAllowanceMinutes,
+                    range = 1..30,
+                    step = 1,
+                    quickPresets = listOf(1, 3, 5, 10, 15),
+                    unitPluralLabel = "min",
+                    valueFormatter = { "${it}m" },
+                    presetLabel = { "${it}m" },
+                    tagPrefix = "sheet_pass_override",
+                    onValueChange = { allowanceOverride = it }
+                )
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Daily Pass Cap Override", style = MaterialTheme.typography.titleSmall)
-                        val globalText = if (globalDailyLimit == 0) "Off" else "$globalDailyLimit/d"
-                        Text(
-                            text = limitOverride?.let { if (it == 0) "Off" else "$it/d" } ?: "Global ($globalText)",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = limitOverride == null,
-                            onClick = { limitOverride = null },
-                            label = { Text("Global") }
-                        )
-                        listOf(0 to "Off", 1 to "1", 2 to "2", 3 to "3", 5 to "5").forEach { (cap, label) ->
-                            FilterChip(
-                                selected = limitOverride == cap,
-                                onClick = { limitOverride = cap },
-                                label = { Text(label) }
-                            )
-                        }
-                    }
-                }
+                OptionalExpressiveNumberSelector(
+                    title = "Daily Pass Cap Override",
+                    value = limitOverride,
+                    defaultValue = globalDailyLimit,
+                    range = 0..10,
+                    step = 1,
+                    quickPresets = listOf(0, 1, 2, 3, 5),
+                    unitPluralLabel = "passes",
+                    valueFormatter = { if (it == 0) "Off" else "$it / day" },
+                    presetLabel = { if (it == 0) "Off" else "$it" },
+                    tagPrefix = "sheet_limit_override",
+                    onValueChange = { limitOverride = it }
+                )
             }
 
             Row(
@@ -1092,17 +1239,19 @@ private fun TargetRuleEditorSheet(
                     TextButton(
                         onClick = {
                             scope = BlockingScope.FEED_ONLY
+                            contentPolicy = ContentBlockPolicy.REELS_ONLY
+                            requestHide = false
                             holdOverride = null
                             allowanceOverride = null
                             limitOverride = null
-                        }
+                        },
+                        modifier = Modifier.testTag("sheet_reset_overrides_btn")
                     ) {
                         Text("Reset overrides")
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
                 }
-
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Button(
@@ -1110,6 +1259,10 @@ private fun TargetRuleEditorSheet(
                             onSave(
                                 target.copy(
                                     isEnabled = enabled,
+                                    contentPolicy = contentPolicy,
+                                    requestHideSurfaces = requestHide,
+                                    reelsDailyGoalMinutes = reelsGoal,
+                                    feedDailyGoalMinutes = feedGoal,
                                     scope = scope,
                                     mode = mode,
                                     holdDurationOverride = holdOverride,
@@ -1118,9 +1271,10 @@ private fun TargetRuleEditorSheet(
                                 )
                             )
                         },
-                        shapes = ButtonDefaults.shapes()
+                        shapes = ButtonDefaults.shapes(),
+                        modifier = Modifier.testTag("sheet_save_rule_btn")
                     ) {
-                        Text("Save")
+                        Text("Save Rule")
                     }
                 }
             }

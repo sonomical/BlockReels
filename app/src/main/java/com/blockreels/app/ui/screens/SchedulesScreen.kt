@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -125,7 +126,10 @@ fun SchedulesScreen(
                 text = { Text("New Schedule") },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.testTag("schedules_add_fab")
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = if (bottomContentPadding > 32.dp) 80.dp else 0.dp)
+                    .testTag("schedules_add_fab")
             )
         }
     ) { innerPadding ->

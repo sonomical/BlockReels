@@ -25,8 +25,15 @@ object InterventionConfigResolver {
         val withRule = if (rule == null) {
             base
         } else {
+            val resolvedRuleMode = if ((rule.requestHideSurfaces || rule.contentPolicy == com.blockreels.app.state.ContentBlockPolicy.HIDE_SURFACES) &&
+                rule.mode == InterventionMode.MINDFUL_PAUSE
+            ) {
+                InterventionMode.AUTO_BACK
+            } else {
+                rule.mode
+            }
             base.copy(
-                mode = rule.mode,
+                mode = resolvedRuleMode,
                 holdDurationSeconds = rule.holdDurationSeconds ?: base.holdDurationSeconds,
                 allowanceMinutes = rule.allowanceMinutes ?: base.allowanceMinutes,
                 dailyPassLimit = rule.dailyPassLimit ?: base.dailyPassLimit

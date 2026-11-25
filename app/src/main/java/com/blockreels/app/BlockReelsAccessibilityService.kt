@@ -429,7 +429,11 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             val rule = NativeStateStore.getRule(pkg)
             val activeSchedule = NativeStateStore.findActiveSchedule(pkg)
             val scope = InterventionConfigResolver.resolveScope(rule, activeSchedule)
-            if (scope == BlockingScope.ENTIRE_APP) {
+            val contentPolicy = rule?.contentPolicy ?: com.blockreels.app.state.ContentBlockPolicy.REELS_ONLY
+            if (scope == BlockingScope.ENTIRE_APP ||
+                contentPolicy == com.blockreels.app.state.ContentBlockPolicy.MAIN_FEED_ONLY ||
+                contentPolicy == com.blockreels.app.state.ContentBlockPolicy.FEED_AND_REELS
+            ) {
                 trace.detectionCompletedUptimeMs = SystemClock.uptimeMillis()
                 return Screen(
                     trace,
@@ -437,7 +441,11 @@ class BlockReelsAccessibilityService : AccessibilityService() {
                         platform = detector.platform,
                         confidence = DetectionConfidence.DEFINITIVE,
                         layer = DetectionLayer.ACTIVITY_OR_WINDOW_NAME,
-                        identifier = "ENTIRE_APP_BLOCK"
+                        identifier = if (scope == BlockingScope.ENTIRE_APP) {
+                            "ENTIRE_APP_BLOCK"
+                        } else {
+                            "POLICY_${contentPolicy.name}"
+                        }
                     )
                 )
             }

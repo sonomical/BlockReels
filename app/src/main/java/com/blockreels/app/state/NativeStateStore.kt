@@ -69,6 +69,17 @@ enum class BlockingScope {
         }
 }
 
+enum class ContentBlockPolicy(
+    val label: String,
+    val shortLabel: String,
+    val description: String
+) {
+    REELS_ONLY("Block Reels", "Reels", "Block short-form video feeds only"),
+    MAIN_FEED_ONLY("Block Feed", "Feed", "Block home scrolling feeds only"),
+    FEED_AND_REELS("Block Both", "Both", "Block both home feed and short-form reels"),
+    HIDE_SURFACES("Don't Show", "Hide", "Request not to see feed or reels and auto-dismiss")
+}
+
 enum class DetectionSensitivity(
     val displayName: String,
     val minConfidenceScore: Double,
@@ -158,7 +169,11 @@ data class RuleConfig(
     val holdDurationSeconds: Int? = null,
     val scope: BlockingScope = BlockingScope.FEED_ONLY,
     val allowanceMinutes: Int? = null,
-    val dailyPassLimit: Int? = null
+    val dailyPassLimit: Int? = null,
+    val contentPolicy: ContentBlockPolicy = ContentBlockPolicy.REELS_ONLY,
+    val requestHideSurfaces: Boolean = false,
+    val reelsDailyGoalMinutes: Int = 0,
+    val feedDailyGoalMinutes: Int = 0
 )
 
 val Context.appDataStore by preferencesDataStore(name = "blockreels_state")
@@ -599,6 +614,10 @@ object NativeStateStore {
         val holdSec = (map["holdDurationSeconds"] as? Number)?.toInt()?.takeIf { it in 3..30 }
         val allowanceMin = (map["allowanceMinutes"] as? Number)?.toInt()?.takeIf { it in 1..30 }
         val dailyLimit = (map["dailyPassLimit"] as? Number)?.toInt()?.takeIf { it in 0..10 }
+        val contentPolicy = parseContentBlockPolicy(map["contentPolicy"] as? String)
+        val requestHide = map["requestHideSurfaces"] as? Boolean ?: (contentPolicy == ContentBlockPolicy.HIDE_SURFACES)
+        val reelsGoal = (map["reelsDailyGoalMinutes"] as? Number)?.toInt()?.coerceIn(0, 180) ?: 0
+        val feedGoal = (map["feedDailyGoalMinutes"] as? Number)?.toInt()?.coerceIn(0, 180) ?: 0
         return RuleConfig(
             packageName = packageName,
             isEnabled = map["isEnabled"] as? Boolean ?: true,
@@ -606,7 +625,11 @@ object NativeStateStore {
             holdDurationSeconds = holdSec,
             scope = scope,
             allowanceMinutes = allowanceMin,
-            dailyPassLimit = dailyLimit
+            dailyPassLimit = dailyLimit,
+            contentPolicy = contentPolicy,
+            requestHideSurfaces = requestHide,
+            reelsDailyGoalMinutes = reelsGoal,
+            feedDailyGoalMinutes = feedGoal
         )
     }
 
@@ -624,6 +647,15 @@ object NativeStateStore {
         return when (value?.uppercase()?.replace("_", "")) {
             "ENTIREAPP", "FULLAPP", "WHOLEAPP" -> BlockingScope.ENTIRE_APP
             else -> BlockingScope.FEED_ONLY
+        }
+    }
+
+    fun parseContentBlockPolicy(value: String?): ContentBlockPolicy {
+        return when (value?.uppercase()?.replace("_", "")) {
+            "MAINFEEDONLY", "FEEDONLY", "FEED" -> ContentBlockPolicy.MAIN_FEED_ONLY
+            "FEEDANDREELS", "BOTH" -> ContentBlockPolicy.FEED_AND_REELS
+            "HIDESURFACES", "DONTSHOW", "HIDE" -> ContentBlockPolicy.HIDE_SURFACES
+            else -> ContentBlockPolicy.REELS_ONLY
         }
     }
 

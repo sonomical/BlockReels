@@ -34,7 +34,12 @@ class BlockReelsRepository(private val context: Context) {
     private val KEY_ENTRY_DELAY_SECONDS = intPreferencesKey("ui_entry_delay_seconds")
     private val KEY_SENSITIVITY = stringPreferencesKey("ui_detection_sensitivity")
     private val KEY_AUDIO_ACTION = stringPreferencesKey("ui_audio_action")
+    private val KEY_CUSTOM_HEADLINE = stringPreferencesKey("ui_custom_headline")
     private val KEY_CUSTOM_MSG = stringPreferencesKey("ui_custom_message")
+    private val KEY_DEFAULT_CONTENT_POLICY = stringPreferencesKey("ui_default_content_policy")
+    private val KEY_DEFAULT_HIDE_SURFACES = booleanPreferencesKey("ui_default_hide_surfaces")
+    private val KEY_DEFAULT_REELS_GOAL = intPreferencesKey("ui_default_reels_goal")
+    private val KEY_DEFAULT_FEED_GOAL = intPreferencesKey("ui_default_feed_goal")
     private val KEY_SOUND = booleanPreferencesKey("ui_sound_enabled")
     private val KEY_HAPTICS = booleanPreferencesKey("ui_haptics_enabled")
     private val KEY_PIN_PROTECTED = booleanPreferencesKey("ui_pin_protected")
@@ -42,6 +47,12 @@ class BlockReelsRepository(private val context: Context) {
     private val KEY_PIN_SALT = stringPreferencesKey("ui_pin_salt")
     private val KEY_STRICT_MODE = booleanPreferencesKey("ui_strict_mode")
     private val KEY_THEME_MODE = stringPreferencesKey("ui_theme_mode")
+    private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("ui_dynamic_color")
+    private val KEY_COLOR_SEED = stringPreferencesKey("ui_color_seed")
+    private val KEY_CONTRAST_LEVEL = stringPreferencesKey("ui_contrast_level")
+    private val KEY_CORNER_STYLE = stringPreferencesKey("ui_corner_style")
+    private val KEY_FONT_SCALE = stringPreferencesKey("ui_font_scale")
+    private val KEY_ICON_STYLE = stringPreferencesKey("ui_icon_style")
     private val KEY_ONBOARDING_DONE = booleanPreferencesKey("ui_onboarding_done")
     private val KEY_TARGETS_JSON = stringPreferencesKey("ui_targets_json")
     private val KEY_SCHEDULES_JSON = stringPreferencesKey("ui_schedules_json")
@@ -71,8 +82,13 @@ class BlockReelsRepository(private val context: Context) {
             entryDelaySeconds = (prefs[KEY_ENTRY_DELAY_SECONDS] ?: 0).coerceIn(0, 10),
             sensitivity = NativeStateStore.parseSensitivity(prefs[KEY_SENSITIVITY]),
             audioAction = audioAction,
+            customMessageHeadline = prefs[KEY_CUSTOM_HEADLINE] ?: "Pause before you scroll.",
             customMessage = prefs[KEY_CUSTOM_MSG]
-                ?: "Take a deep breath. Do you really want to scroll right now?",
+                ?: "Take a deep breath. Do you really want to spend your focus here right now?",
+            defaultContentPolicy = NativeStateStore.parseContentBlockPolicy(prefs[KEY_DEFAULT_CONTENT_POLICY]),
+            defaultRequestHideSurfaces = prefs[KEY_DEFAULT_HIDE_SURFACES] ?: false,
+            defaultReelsGoalMinutes = (prefs[KEY_DEFAULT_REELS_GOAL] ?: 15).coerceIn(0, 180),
+            defaultFeedGoalMinutes = (prefs[KEY_DEFAULT_FEED_GOAL] ?: 20).coerceIn(0, 180),
             soundEnabled = audioAction != AudioAction.NONE,
             hapticsEnabled = prefs[KEY_HAPTICS] ?: true,
             pinProtected = prefs[KEY_PIN_PROTECTED] ?: false,
@@ -80,6 +96,12 @@ class BlockReelsRepository(private val context: Context) {
             pinSalt = prefs[KEY_PIN_SALT] ?: "",
             strictMode = prefs[KEY_STRICT_MODE] ?: false,
             themeMode = parseTheme(prefs[KEY_THEME_MODE]),
+            dynamicColorEnabled = prefs[KEY_DYNAMIC_COLOR] ?: false,
+            colorSeed = BackupCodec.parseColorSeed(prefs[KEY_COLOR_SEED]),
+            contrastLevel = BackupCodec.parseContrastLevel(prefs[KEY_CONTRAST_LEVEL]),
+            cornerStyle = BackupCodec.parseCornerStyle(prefs[KEY_CORNER_STYLE]),
+            fontScale = BackupCodec.parseFontScale(prefs[KEY_FONT_SCALE]),
+            iconStyle = BackupCodec.parseIconStyle(prefs[KEY_ICON_STYLE]),
             onboardingCompleted = prefs[KEY_ONBOARDING_DONE] ?: false
         )
 
@@ -145,7 +167,12 @@ class BlockReelsRepository(private val context: Context) {
             prefs[KEY_ENTRY_DELAY_SECONDS] = settings.entryDelaySeconds
             prefs[KEY_SENSITIVITY] = settings.sensitivity.name
             prefs[KEY_AUDIO_ACTION] = settings.audioAction.name
+            prefs[KEY_CUSTOM_HEADLINE] = settings.customMessageHeadline
             prefs[KEY_CUSTOM_MSG] = settings.customMessage
+            prefs[KEY_DEFAULT_CONTENT_POLICY] = settings.defaultContentPolicy.name
+            prefs[KEY_DEFAULT_HIDE_SURFACES] = settings.defaultRequestHideSurfaces
+            prefs[KEY_DEFAULT_REELS_GOAL] = settings.defaultReelsGoalMinutes
+            prefs[KEY_DEFAULT_FEED_GOAL] = settings.defaultFeedGoalMinutes
             prefs[KEY_SOUND] = settings.audioAction != AudioAction.NONE
             prefs[KEY_HAPTICS] = settings.hapticsEnabled
             prefs[KEY_PIN_PROTECTED] = settings.pinProtected
@@ -153,6 +180,12 @@ class BlockReelsRepository(private val context: Context) {
             prefs[KEY_PIN_SALT] = settings.pinSalt
             prefs[KEY_STRICT_MODE] = settings.strictMode
             prefs[KEY_THEME_MODE] = settings.themeMode.name
+            prefs[KEY_DYNAMIC_COLOR] = settings.dynamicColorEnabled
+            prefs[KEY_COLOR_SEED] = settings.colorSeed.name
+            prefs[KEY_CONTRAST_LEVEL] = settings.contrastLevel.name
+            prefs[KEY_CORNER_STYLE] = settings.cornerStyle.name
+            prefs[KEY_FONT_SCALE] = settings.fontScale.name
+            prefs[KEY_ICON_STYLE] = settings.iconStyle.name
             prefs[KEY_ONBOARDING_DONE] = settings.onboardingCompleted
         }
         syncToNativeStateStore(settings, targets, schedules)
@@ -225,6 +258,10 @@ class BlockReelsRepository(private val context: Context) {
                 put("isEnabled", target.isEnabled)
                 put("interventionMode", target.mode.name)
                 put("scope", target.scope.name)
+                put("contentPolicy", target.contentPolicy.name)
+                put("requestHideSurfaces", target.requestHideSurfaces)
+                put("reelsDailyGoalMinutes", target.reelsDailyGoalMinutes)
+                put("feedDailyGoalMinutes", target.feedDailyGoalMinutes)
                 target.holdDurationOverride?.let { put("holdDurationSeconds", it) }
                 target.allowanceMinutesOverride?.let { put("allowanceMinutes", it) }
                 target.dailyPassLimitOverride?.let { put("dailyPassLimit", it) }
@@ -350,7 +387,7 @@ object BackupCodec {
         schedules: List<ScheduleItem>
     ): String {
         val root = JSONObject().apply {
-            put("schemaVersion", 3)
+            put("schemaVersion", 4)
             put("exportedAt", System.currentTimeMillis())
             put("settings", JSONObject().apply {
                 put("masterEnabled", settings.masterEnabled)
@@ -361,11 +398,22 @@ object BackupCodec {
                 put("entryDelaySeconds", settings.entryDelaySeconds)
                 put("sensitivity", settings.sensitivity.name)
                 put("audioAction", settings.audioAction.name)
+                put("customMessageHeadline", settings.customMessageHeadline)
                 put("customMessage", settings.customMessage)
+                put("defaultContentPolicy", settings.defaultContentPolicy.name)
+                put("defaultRequestHideSurfaces", settings.defaultRequestHideSurfaces)
+                put("defaultReelsGoalMinutes", settings.defaultReelsGoalMinutes)
+                put("defaultFeedGoalMinutes", settings.defaultFeedGoalMinutes)
                 put("soundEnabled", settings.audioAction != AudioAction.NONE)
                 put("hapticsEnabled", settings.hapticsEnabled)
                 put("strictMode", settings.strictMode)
                 put("themeMode", settings.themeMode.name)
+                put("dynamicColorEnabled", settings.dynamicColorEnabled)
+                put("colorSeed", settings.colorSeed.name)
+                put("contrastLevel", settings.contrastLevel.name)
+                put("cornerStyle", settings.cornerStyle.name)
+                put("fontScale", settings.fontScale.name)
+                put("iconStyle", settings.iconStyle.name)
             })
             put("targets", JSONArray(encodeTargetsJson(targets)))
             put("schedules", JSONArray(encodeSchedulesJson(schedules.filterNot { it.isQuickBoost })))
@@ -380,7 +428,7 @@ object BackupCodec {
         return runCatching {
             val root = JSONObject(rawJson.trim())
             val version = root.optInt("schemaVersion", -1)
-            require(version in 1..3) { "Unsupported backup schema version." }
+            require(version in 1..4) { "Unsupported backup schema version." }
 
             val settingsObj = root.getJSONObject("settings")
             val legacySound = settingsObj.optBoolean("soundEnabled", true)
@@ -397,14 +445,30 @@ object BackupCodec {
                 entryDelaySeconds = settingsObj.optInt("entryDelaySeconds", 0).coerceIn(0, 10),
                 sensitivity = NativeStateStore.parseSensitivity(settingsObj.optString("sensitivity")),
                 audioAction = audioAction,
+                customMessageHeadline = settingsObj.optString(
+                    "customMessageHeadline",
+                    "Pause before you scroll."
+                ).take(80),
                 customMessage = settingsObj.optString(
                     "customMessage",
-                    "Take a deep breath. Do you really want to scroll right now?"
+                    "Take a deep breath. Do you really want to spend your focus here right now?"
                 ).take(240),
+                defaultContentPolicy = NativeStateStore.parseContentBlockPolicy(
+                    settingsObj.optString("defaultContentPolicy")
+                ),
+                defaultRequestHideSurfaces = settingsObj.optBoolean("defaultRequestHideSurfaces", false),
+                defaultReelsGoalMinutes = settingsObj.optInt("defaultReelsGoalMinutes", 15).coerceIn(0, 180),
+                defaultFeedGoalMinutes = settingsObj.optInt("defaultFeedGoalMinutes", 20).coerceIn(0, 180),
                 soundEnabled = audioAction != AudioAction.NONE,
                 hapticsEnabled = settingsObj.optBoolean("hapticsEnabled", true),
                 strictMode = settingsObj.optBoolean("strictMode", false),
-                themeMode = parseTheme(settingsObj.optString("themeMode"))
+                themeMode = parseTheme(settingsObj.optString("themeMode")),
+                dynamicColorEnabled = settingsObj.optBoolean("dynamicColorEnabled", false),
+                colorSeed = parseColorSeed(settingsObj.optString("colorSeed")),
+                contrastLevel = parseContrastLevel(settingsObj.optString("contrastLevel")),
+                cornerStyle = parseCornerStyle(settingsObj.optString("cornerStyle")),
+                fontScale = parseFontScale(settingsObj.optString("fontScale")),
+                iconStyle = parseIconStyle(settingsObj.optString("iconStyle"))
             )
 
             val restoredTargets = parseTargetsJson(root.getJSONArray("targets").toString())
@@ -422,6 +486,21 @@ object BackupCodec {
         else -> AppThemeMode.SYSTEM
     }
 
+    fun parseColorSeed(raw: String?): AppColorSeed =
+        AppColorSeed.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: AppColorSeed.EMERALD
+
+    fun parseContrastLevel(raw: String?): AppContrastLevel =
+        AppContrastLevel.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: AppContrastLevel.STANDARD
+
+    fun parseCornerStyle(raw: String?): AppCornerStyle =
+        AppCornerStyle.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: AppCornerStyle.EXPRESSIVE
+
+    fun parseFontScale(raw: String?): AppFontScale =
+        AppFontScale.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: AppFontScale.DEFAULT
+
+    fun parseIconStyle(raw: String?): AppIconStyle =
+        AppIconStyle.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: AppIconStyle.TONAL_COOKIE
+
     fun encodeTargetsJson(targets: List<TargetAppConfig>): String {
         val arr = JSONArray()
         targets.forEach { t ->
@@ -433,6 +512,10 @@ object BackupCodec {
                 put("isEnabled", t.isEnabled)
                 put("mode", t.mode.name)
                 put("scope", t.scope.name)
+                put("contentPolicy", t.contentPolicy.name)
+                put("requestHideSurfaces", t.requestHideSurfaces)
+                put("reelsDailyGoalMinutes", t.reelsDailyGoalMinutes)
+                put("feedDailyGoalMinutes", t.feedDailyGoalMinutes)
                 if (t.holdDurationOverride != null) put("holdDurationOverride", t.holdDurationOverride)
                 if (t.allowanceMinutesOverride != null) put("allowanceMinutesOverride", t.allowanceMinutesOverride)
                 if (t.dailyPassLimitOverride != null) put("dailyPassLimitOverride", t.dailyPassLimitOverride)
@@ -448,6 +531,7 @@ object BackupCodec {
             val o = arr.getJSONObject(i)
             val pkg = o.optString("packageName")
             if (pkg.isBlank()) continue
+            val contentPolicy = NativeStateStore.parseContentBlockPolicy(o.optString("contentPolicy"))
             parsed[pkg] = TargetAppConfig(
                 packageName = pkg,
                 displayName = o.optString("displayName", SupportedTargets.labelForPackage(pkg)),
@@ -456,6 +540,10 @@ object BackupCodec {
                 isEnabled = o.optBoolean("isEnabled", false),
                 mode = NativeStateStore.parseInterventionMode(o.optString("mode")),
                 scope = NativeStateStore.parseBlockingScope(o.optString("scope")),
+                contentPolicy = contentPolicy,
+                requestHideSurfaces = o.optBoolean("requestHideSurfaces", contentPolicy == com.blockreels.app.state.ContentBlockPolicy.HIDE_SURFACES),
+                reelsDailyGoalMinutes = o.optInt("reelsDailyGoalMinutes", 15).coerceIn(0, 180),
+                feedDailyGoalMinutes = o.optInt("feedDailyGoalMinutes", 20).coerceIn(0, 180),
                 holdDurationOverride = if (o.has("holdDurationOverride") && !o.isNull("holdDurationOverride")) {
                     o.optInt("holdDurationOverride").takeIf { it in 3..30 }
                 } else null,

@@ -9,6 +9,11 @@ import com.blockreels.app.BlockReelsAccessibilityService
 import com.blockreels.app.MonitoringForegroundService
 import com.blockreels.app.data.ActiveAllowanceItem
 import com.blockreels.app.data.AnalyticsSummary
+import com.blockreels.app.data.AppColorSeed
+import com.blockreels.app.data.AppContrastLevel
+import com.blockreels.app.data.AppCornerStyle
+import com.blockreels.app.data.AppFontScale
+import com.blockreels.app.data.AppIconStyle
 import com.blockreels.app.data.AppSettingsState
 import com.blockreels.app.data.AppThemeMode
 import com.blockreels.app.data.BlockReelsRepository
@@ -24,6 +29,7 @@ import com.blockreels.app.data.SystemHealthState
 import com.blockreels.app.data.TargetAppConfig
 import com.blockreels.app.state.AudioAction
 import com.blockreels.app.state.BlockingScope
+import com.blockreels.app.state.ContentBlockPolicy
 import com.blockreels.app.state.DetectionSensitivity
 import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.state.NativeEventBus
@@ -358,9 +364,73 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateCustomMessage(message: String) {
-        val cleaned = message.trim().ifEmpty { "Take a deep breath. Do you really want to scroll right now?" }
+        val cleaned = message.trim().ifEmpty { "Take a deep breath. Do you really want to spend your focus here right now?" }
         updateSettings { it.copy(customMessage = cleaned.take(240)) }
-        emitMessage("Pause prompt updated")
+        emitMessage("Block message updated")
+    }
+
+    fun updateCustomMessageHeadline(headline: String) {
+        val cleaned = headline.trim().ifEmpty { "Pause before you scroll." }
+        updateSettings { it.copy(customMessageHeadline = cleaned.take(80)) }
+    }
+
+    fun updateBlockMessageCopy(headline: String, message: String) {
+        val cleanedHeadline = headline.trim().ifEmpty { "Pause before you scroll." }.take(80)
+        val cleanedMsg = message.trim()
+            .ifEmpty { "Take a deep breath. Do you really want to spend your focus here right now?" }
+            .take(240)
+        updateSettings { it.copy(customMessageHeadline = cleanedHeadline, customMessage = cleanedMsg) }
+        emitMessage("Block message saved")
+    }
+
+    fun updateDefaultContentPolicy(policy: ContentBlockPolicy) {
+        val hide = policy == ContentBlockPolicy.HIDE_SURFACES || _uiState.value.settings.defaultRequestHideSurfaces
+        updateSettings { it.copy(defaultContentPolicy = policy, defaultRequestHideSurfaces = hide) }
+    }
+
+    fun updateDefaultRequestHideSurfaces(hide: Boolean) {
+        updateSettings { it.copy(defaultRequestHideSurfaces = hide) }
+    }
+
+    fun updateDefaultReelsGoalMinutes(minutes: Int) {
+        updateSettings { it.copy(defaultReelsGoalMinutes = minutes.coerceIn(0, 180)) }
+    }
+
+    fun updateDefaultFeedGoalMinutes(minutes: Int) {
+        updateSettings { it.copy(defaultFeedGoalMinutes = minutes.coerceIn(0, 180)) }
+    }
+
+    fun applyBlockingPolicyAndGoalsToAllApps(
+        policy: ContentBlockPolicy,
+        requestHide: Boolean,
+        reelsGoalMinutes: Int,
+        feedGoalMinutes: Int,
+        enableAllApps: Boolean = true
+    ) {
+        val clampedReels = reelsGoalMinutes.coerceIn(0, 180)
+        val clampedFeed = feedGoalMinutes.coerceIn(0, 180)
+        val effectiveHide = requestHide || policy == ContentBlockPolicy.HIDE_SURFACES
+        val nextSettings = _uiState.value.settings.copy(
+            defaultContentPolicy = policy,
+            defaultRequestHideSurfaces = effectiveHide,
+            defaultReelsGoalMinutes = clampedReels,
+            defaultFeedGoalMinutes = clampedFeed
+        )
+        val nextTargets = _uiState.value.targets.map { target ->
+            target.copy(
+                isEnabled = if (enableAllApps) true else target.isEnabled,
+                contentPolicy = policy,
+                requestHideSurfaces = effectiveHide,
+                reelsDailyGoalMinutes = clampedReels,
+                feedDailyGoalMinutes = clampedFeed
+            )
+        }
+        _uiState.update { it.copy(settings = nextSettings, targets = nextTargets) }
+        viewModelScope.launch {
+            repository.saveSettings(nextSettings, nextTargets, _uiState.value.schedules)
+            repository.saveTargets(nextSettings, nextTargets, _uiState.value.schedules)
+        }
+        emitMessage("Applied ${policy.label} and daily goals to all ${nextTargets.size} apps")
     }
 
     fun setHapticsEnabled(enabled: Boolean) {
@@ -374,6 +444,30 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setThemeMode(mode: AppThemeMode) {
         updateSettings { it.copy(themeMode = mode) }
+    }
+
+    fun setDynamicColorEnabled(enabled: Boolean) {
+        updateSettings { it.copy(dynamicColorEnabled = enabled) }
+    }
+
+    fun setColorSeed(seed: AppColorSeed) {
+        updateSettings { it.copy(colorSeed = seed, dynamicColorEnabled = false) }
+    }
+
+    fun setContrastLevel(level: AppContrastLevel) {
+        updateSettings { it.copy(contrastLevel = level) }
+    }
+
+    fun setCornerStyle(style: AppCornerStyle) {
+        updateSettings { it.copy(cornerStyle = style) }
+    }
+
+    fun setFontScale(scale: AppFontScale) {
+        updateSettings { it.copy(fontScale = scale) }
+    }
+
+    fun setIconStyle(style: AppIconStyle) {
+        updateSettings { it.copy(iconStyle = style) }
     }
 
     fun completeOnboarding() {
@@ -416,13 +510,14 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
         durationMinutes: Int,
         modeOverride: InterventionMode = InterventionMode.STRICT_BLOCK
     ) {
+        val clampedMinutes = durationMinutes.coerceIn(5, 480)
         val now = System.currentTimeMillis()
         val startCal = Calendar.getInstance().apply { timeInMillis = now }
-        val endCal = Calendar.getInstance().apply { timeInMillis = now + durationMinutes * 60_000L }
+        val endCal = Calendar.getInstance().apply { timeInMillis = now + clampedMinutes * 60_000L }
         val allPackages = _uiState.value.targets.map { it.packageName }.toSet()
         val boost = ScheduleItem(
             id = "${ScheduleRule.QUICK_BOOST_ID_PREFIX}$now",
-            title = "Focus Lock (${durationMinutes}m)",
+            title = "Focus Lock (${clampedMinutes}m)",
             isActive = true,
             daysOfWeek = setOf(1, 2, 3, 4, 5, 6, 7),
             startHour = startCal.get(Calendar.HOUR_OF_DAY),
