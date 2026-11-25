@@ -2,13 +2,20 @@ name: Android CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta, develop]
   pull_request:
-    branches: [main]
+    branches: [main, beta]
+  workflow_dispatch:
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  verify-and-build:
+    name: Verify, Test & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -46,3 +53,21 @@ jobs:
 
       - name: Assemble debug APK
         run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify minified release build compiles
+        run: gradle :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/reports/tests/testDebugUnitTest/
+          retention-days: 14
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockreels-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

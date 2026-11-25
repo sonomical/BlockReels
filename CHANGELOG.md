@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0-beta.1] - 2026-11-25
+
 ### Added
+- **GitHub Actions CI/CD pipelines**: automated unit test + minified release verification (`android-ci.yml`), Beta Pre-Release CD (`beta-release.yml` on `beta` branch, `v*-beta*` tags, or manual trigger with optional Google Play beta track upload), and Production Release CD (`release.yml`).
+- **Expanded blocking policies & daily goals**: block Reels/Shorts, Main Feed, Both, or hide surfaces automatically, configure separate daily minute goals for Reels and Feed, and apply rules across all supported apps in one tap.
+- **Range-validated numerical controls with quick presets**: one-tap presets paired with precision steppers, sliders, and direct numeric input dialogs across goals, hold duration, pass length, daily cap, entry delay, per-app overrides, and custom Focus Lock durations.
+- **Appearance & Theme Studio**: System/Light/Dark/AMOLED modes, Android 12+ Material You dynamic color, six curated opaque Material 3 Expressive color palettes, contrast levels, corner geometry styles, typography scaling, and strictly theme-colored social app icon styles (Cookie, Squircle, Soft Circle).
+- **Four-step editorial Material 3 Expressive onboarding** with custom illustrations, animated step progress, target selection, policy/goal setup, and live permissions checklist.
+- **Editorial Block Message screen** with hero illustration, bold typography, inline headline/body editing, and a clear breakdown of triggered actions.
+
+### Changed
+- Adopted an opaque Material 3 Expressive floating bottom navigation bar on compact screens and `NavigationRail` on expanded screens.
+- Bumped backup codec to schema v4 (backward-compatible with v1–v3) and app version to `1.1.0-beta.1` (`versionCode = 2`).
+
+### Earlier Unreleased Changes
 - **Home Exit (`REDIRECT_HOME`)** intervention mode alongside Auto Back, Mindful Pause, and Strict Block.
 - **Blocking Scope (`Feed Only` / `Full App`)** per target app and per schedule override.
 - **Per-app rule overrides** for mode, scope, hold duration, pass length, and daily pass quota.

@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT
 package com.blockreels.app.ui.screens
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,7 +26,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Flag
@@ -29,7 +38,6 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
@@ -61,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -214,41 +223,15 @@ fun AppBlockerScreen(
                 }
 
                 item(key = "filter_bar") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TargetFilter.entries.forEach { option ->
-                                val count = when (option) {
-                                    TargetFilter.ALL -> uiState.targets.size
-                                    TargetFilter.ACTIVE -> uiState.enabledTargetsCount
-                                    TargetFilter.INSTALLED -> uiState.installedTargetsCount
-                                }
-                                FilterChip(
-                                    selected = filter == option,
-                                    onClick = { filter = option },
-                                    label = { Text("${option.label} ($count)", maxLines = 1) },
-                                    modifier = Modifier.testTag("apps_filter_${option.name.lowercase()}")
-                                )
-                            }
-                        }
-                        FilledTonalButton(
-                            onClick = onOpenBlockMessageScreen,
-                            shapes = ButtonDefaults.shapes(),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            modifier = Modifier.testTag("apps_preview_overlay_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PlayCircleOutline,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Message")
-                        }
-                    }
+                    TargetFilterAndPreviewBar(
+                        selectedFilter = filter,
+                        allCount = uiState.targets.size,
+                        activeCount = uiState.enabledTargetsCount,
+                        installedCount = uiState.installedTargetsCount,
+                        messageHeadline = uiState.settings.customMessageHeadline,
+                        onSelectFilter = { filter = it },
+                        onOpenBlockMessageScreen = onOpenBlockMessageScreen
+                    )
                 }
 
                 if (filteredTargets.isEmpty()) {
@@ -339,6 +322,193 @@ fun AppBlockerScreen(
                 editingTarget = null
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun TargetFilterAndPreviewBar(
+    selectedFilter: TargetFilter,
+    allCount: Int,
+    activeCount: Int,
+    installedCount: Int,
+    messageHeadline: String,
+    onSelectFilter: (TargetFilter) -> Unit,
+    onOpenBlockMessageScreen: () -> Unit
+) {
+    val fontScale = LocalDensity.current.fontScale
+    val dynamicPreviewSubtitle = messageHeadline.trim().ifBlank { "Customize pause prompt & actions" }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+    ) {
+        val useSingleRow = maxWidth >= 460.dp && fontScale <= 1.1f
+
+        val filterChipsRow: @Composable (Modifier) -> Unit = { rowModifier ->
+            Row(
+                modifier = rowModifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TargetFilter.entries.forEach { option ->
+                    val count = when (option) {
+                        TargetFilter.ALL -> allCount
+                        TargetFilter.ACTIVE -> activeCount
+                        TargetFilter.INSTALLED -> installedCount
+                    }
+                    val isSelected = selectedFilter == option
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onSelectFilter(option) },
+                        leadingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        } else null,
+                        label = {
+                            Text(
+                                text = "${option.label} ($count)",
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        modifier = Modifier
+                            .animateContentSize(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                )
+                            )
+                            .testTag("apps_filter_${option.name.lowercase()}")
+                    )
+                }
+            }
+        }
+
+        if (useSingleRow) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                filterChipsRow(Modifier.weight(1f))
+                FilledTonalButton(
+                    onClick = onOpenBlockMessageScreen,
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.testTag("apps_preview_overlay_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PlayCircleOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Block Message",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                filterChipsRow(Modifier.fillMaxWidth())
+
+                Surface(
+                    onClick = onOpenBlockMessageScreen,
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .testTag("apps_preview_overlay_btn")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayCircleOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            Text(
+                                text = "Block Message",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = dynamicPreviewSubtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "Preview",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                    contentDescription = "Open block message preview",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -722,14 +892,16 @@ private fun EngineGlobalModeSection(
         )
 
         val effective = if (strictLocked) InterventionMode.STRICT_BLOCK else selected
-        val modes = listOf(
-            ModeCardOption(InterventionMode.AUTO_BACK, "Exit via Back", Icons.Rounded.Undo),
-            ModeCardOption(InterventionMode.REDIRECT_HOME, "Jump to Home", Icons.Rounded.Home),
-            ModeCardOption(InterventionMode.MINDFUL_PAUSE, "Hold-to-Unlock", Icons.Rounded.SelfImprovement),
-            ModeCardOption(InterventionMode.STRICT_BLOCK, "Hard Lock", Icons.Rounded.Block)
-        )
+        val modePairs = remember {
+            listOf(
+                ModeCardOption(InterventionMode.AUTO_BACK, "Exit via Back", Icons.AutoMirrored.Rounded.Undo),
+                ModeCardOption(InterventionMode.REDIRECT_HOME, "Jump to Home", Icons.Rounded.Home),
+                ModeCardOption(InterventionMode.MINDFUL_PAUSE, "Hold-to-Unlock", Icons.Rounded.SelfImprovement),
+                ModeCardOption(InterventionMode.STRICT_BLOCK, "Hard Lock", Icons.Rounded.Block)
+            ).chunked(2)
+        }
 
-        modes.chunked(2).forEach { pair ->
+        modePairs.forEach { pair ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)

@@ -133,11 +133,136 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
         selectedTab = MainTab.SHIELD
     }
 
-    fun guardWithPinIfNeeded(title: String, subtitle: String, action: () -> Unit) {
-        if (uiState.settings.pinProtected) {
-            pendingPinAction = PendingPinAction(title, subtitle, action)
-        } else {
-            action()
+    val guardWithPinIfNeeded: (String, String, () -> Unit) -> Unit = remember(viewModel) {
+        { title, subtitle, action ->
+            if (viewModel.uiState.value.settings.pinProtected) {
+                pendingPinAction = PendingPinAction(title, subtitle, action)
+            } else {
+                action()
+            }
+        }
+    }
+
+    val onToggleMaster: (Boolean) -> Unit = remember(viewModel) {
+        { enable ->
+            if (!enable) {
+                guardWithPinIfNeeded(
+                    "Pause Shield?",
+                    "Enter PIN to pause protection."
+                ) { viewModel.toggleMasterProtection(false) }
+            } else {
+                viewModel.toggleMasterProtection(true)
+            }
+        }
+    }
+
+    val onToggleTargetGuarded: (String, Boolean) -> Unit = remember(viewModel) {
+        { pkg, enable ->
+            if (!enable) {
+                guardWithPinIfNeeded(
+                    "Disable Rule?",
+                    "Enter PIN to relax blocking for this app."
+                ) { viewModel.toggleTargetApp(pkg, false) }
+            } else {
+                viewModel.toggleTargetApp(pkg, true)
+            }
+        }
+    }
+
+    val onCancelQuickBoostGuarded: () -> Unit = remember(viewModel) {
+        {
+            guardWithPinIfNeeded(
+                "Cancel Focus Lock?",
+                "Enter PIN to end Focus Lock early."
+            ) { viewModel.cancelQuickBoost() }
+        }
+    }
+
+    val onApplyPolicyAndGoalsToAll = remember(viewModel) {
+        { policy: com.blockreels.app.state.ContentBlockPolicy, hide: Boolean, reelsGoal: Int, feedGoal: Int ->
+            viewModel.applyBlockingPolicyAndGoalsToAllApps(
+                policy = policy,
+                requestHide = hide,
+                reelsGoalMinutes = reelsGoal,
+                feedGoalMinutes = feedGoal
+            )
+        }
+    }
+
+    val onApplyOnboardingPolicy: () -> Unit = remember(viewModel) {
+        {
+            val s = viewModel.uiState.value.settings
+            viewModel.applyBlockingPolicyAndGoalsToAllApps(
+                policy = s.defaultContentPolicy,
+                requestHide = s.defaultRequestHideSurfaces,
+                reelsGoalMinutes = s.defaultReelsGoalMinutes,
+                feedGoalMinutes = s.defaultFeedGoalMinutes,
+                enableAllApps = false
+            )
+        }
+    }
+
+    val onToggleScheduleGuarded: (String, Boolean) -> Unit = remember(viewModel) {
+        { id, active ->
+            if (!active) {
+                guardWithPinIfNeeded(
+                    "Pause Schedule?",
+                    "Enter PIN to pause this schedule."
+                ) { viewModel.toggleSchedule(id, false) }
+            } else {
+                viewModel.toggleSchedule(id, true)
+            }
+        }
+    }
+
+    val onDeleteScheduleGuarded: (String) -> Unit = remember(viewModel) {
+        { id ->
+            guardWithPinIfNeeded(
+                "Delete Schedule?",
+                "Enter PIN to delete this schedule."
+            ) { viewModel.deleteSchedule(id) }
+        }
+    }
+
+    val onToggleStrictModeGuarded: (Boolean) -> Unit = remember(viewModel) {
+        { enable ->
+            if (!enable) {
+                guardWithPinIfNeeded(
+                    "Disable Strict Lock?",
+                    "Enter PIN to re-enable hold-to-pass."
+                ) { viewModel.setStrictMode(false) }
+            } else {
+                viewModel.setStrictMode(true)
+            }
+        }
+    }
+
+    val onRequestDisablePinGuarded: () -> Unit = remember(viewModel) {
+        {
+            guardWithPinIfNeeded(
+                "Remove PIN Lock?",
+                "Enter your current 4-digit PIN."
+            ) { viewModel.disablePinLock() }
+        }
+    }
+
+    val onNavigateToEngine: () -> Unit = remember { { selectedTab = MainTab.ENGINE } }
+    val onNavigateToSchedules: () -> Unit = remember { { selectedTab = MainTab.SCHEDULES } }
+    val onNavigateToStats: () -> Unit = remember { { selectedTab = MainTab.ACTIVITY } }
+    val onNavigateToSettings: () -> Unit = remember { { selectedTab = MainTab.SETTINGS } }
+    val onOpenBlockMessageScreen: () -> Unit = remember { { modalScreen = ModalScreen.MINDFUL_PREVIEW } }
+    val onRequestPinSetup: () -> Unit = remember { { modalScreen = ModalScreen.PIN_SETUP } }
+    val onCloseModal: () -> Unit = remember { { modalScreen = ModalScreen.NONE } }
+    val onShowMessage: (String) -> Unit = remember(coroutineScope, snackbarHostState) {
+        { msg -> coroutineScope.launch { snackbarHostState.showSnackbar(msg) } }
+    }
+    val onSelectBottomDestination: (FloatingNavDestination) -> Unit = remember(haptics) {
+        { dest ->
+            val next = MainTab.valueOf(dest.id)
+            if (selectedTab != next) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                selectedTab = next
+            }
         }
     }
 
@@ -157,6 +282,7 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
         themeMode = uiState.settings.themeMode,
         dynamicColorEnabled = uiState.settings.dynamicColorEnabled,
         colorSeed = uiState.settings.colorSeed,
+        customPalette = uiState.settings.customPalette,
         contrastLevel = uiState.settings.contrastLevel,
         cornerStyle = uiState.settings.cornerStyle,
         fontScale = uiState.settings.fontScale,
@@ -183,15 +309,7 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                     onToggleRequestHide = viewModel::updateDefaultRequestHideSurfaces,
                     onChangeReelsGoal = viewModel::updateDefaultReelsGoalMinutes,
                     onChangeFeedGoal = viewModel::updateDefaultFeedGoalMinutes,
-                    onApplyPolicyAndGoals = {
-                        viewModel.applyBlockingPolicyAndGoalsToAllApps(
-                            policy = uiState.settings.defaultContentPolicy,
-                            requestHide = uiState.settings.defaultRequestHideSurfaces,
-                            reelsGoalMinutes = uiState.settings.defaultReelsGoalMinutes,
-                            feedGoalMinutes = uiState.settings.defaultFeedGoalMinutes,
-                            enableAllApps = false
-                        )
-                    },
+                    onApplyPolicyAndGoals = onApplyOnboardingPolicy,
                     onFinishOnboarding = viewModel::completeOnboarding
                 )
             }
@@ -211,7 +329,7 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                     hapticsEnabled = uiState.settings.hapticsEnabled,
                     onUpdateMessageCopy = viewModel::updateBlockMessageCopy,
                     onCompletedPreview = viewModel::recordPreviewInterception,
-                    onBack = { modalScreen = ModalScreen.NONE }
+                    onBack = onCloseModal
                 )
             }
             modalScreen == ModalScreen.PIN_SETUP -> {
@@ -220,7 +338,7 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                         viewModel.enablePinLock(pin)
                         modalScreen = ModalScreen.NONE
                     },
-                    onCancel = { modalScreen = ModalScreen.NONE }
+                    onCancel = onCloseModal
                 )
             }
             else -> {
@@ -326,66 +444,27 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                                         MainTab.SHIELD -> DashboardScreen(
                                             uiState = uiState,
                                             bottomContentPadding = screenBottomPadding,
-                                            onToggleMaster = { enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Pause Shield?",
-                                                        subtitle = "Enter PIN to pause protection."
-                                                    ) { viewModel.toggleMasterProtection(false) }
-                                                } else {
-                                                    viewModel.toggleMasterProtection(true)
-                                                }
-                                            },
-                                            onToggleTargetApp = { pkg, enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Disable Rule?",
-                                                        subtitle = "Enter PIN to relax blocking for this app."
-                                                    ) { viewModel.toggleTargetApp(pkg, false) }
-                                                } else {
-                                                    viewModel.toggleTargetApp(pkg, true)
-                                                }
-                                            },
+                                            onToggleMaster = onToggleMaster,
+                                            onToggleTargetApp = onToggleTargetGuarded,
                                             onStartQuickBoost = viewModel::startQuickBoost,
-                                            onCancelQuickBoost = {
-                                                guardWithPinIfNeeded(
-                                                    title = "Cancel Focus Lock?",
-                                                    subtitle = "Enter PIN to end Focus Lock early."
-                                                ) { viewModel.cancelQuickBoost() }
-                                            },
+                                            onCancelQuickBoost = onCancelQuickBoostGuarded,
                                             onRevokeAllowance = viewModel::revokeTemporaryAllowance,
                                             onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
-                                            onNavigateToEngine = { selectedTab = MainTab.ENGINE },
-                                            onNavigateToSchedules = { selectedTab = MainTab.SCHEDULES },
-                                            onNavigateToStats = { selectedTab = MainTab.ACTIVITY },
-                                            onNavigateToSettings = { selectedTab = MainTab.SETTINGS }
+                                            onNavigateToEngine = onNavigateToEngine,
+                                            onNavigateToSchedules = onNavigateToSchedules,
+                                            onNavigateToStats = onNavigateToStats,
+                                            onNavigateToSettings = onNavigateToSettings
                                         )
                                         MainTab.ENGINE -> AppBlockerScreen(
                                             uiState = uiState,
                                             bottomContentPadding = screenBottomPadding,
-                                            onToggleTarget = { pkg, enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Disable Rule?",
-                                                        subtitle = "Enter PIN to disable blocking for this target."
-                                                    ) { viewModel.toggleTargetApp(pkg, false) }
-                                                } else {
-                                                    viewModel.toggleTargetApp(pkg, true)
-                                                }
-                                            },
+                                            onToggleTarget = onToggleTargetGuarded,
                                             onUpdateTargetRule = viewModel::updateTargetRule,
                                             onUpdateDefaultContentPolicy = viewModel::updateDefaultContentPolicy,
                                             onUpdateDefaultRequestHide = viewModel::updateDefaultRequestHideSurfaces,
                                             onUpdateDefaultReelsGoal = viewModel::updateDefaultReelsGoalMinutes,
                                             onUpdateDefaultFeedGoal = viewModel::updateDefaultFeedGoalMinutes,
-                                            onApplyPolicyAndGoalsToAll = { policy, hide, reelsGoal, feedGoal ->
-                                                viewModel.applyBlockingPolicyAndGoalsToAllApps(
-                                                    policy = policy,
-                                                    requestHide = hide,
-                                                    reelsGoalMinutes = reelsGoal,
-                                                    feedGoalMinutes = feedGoal
-                                                )
-                                            },
+                                            onApplyPolicyAndGoalsToAll = onApplyPolicyAndGoalsToAll,
                                             onUpdateGlobalMode = viewModel::updateGlobalMode,
                                             onUpdateHoldDuration = viewModel::updateHoldDuration,
                                             onUpdateAllowanceMinutes = viewModel::updateAllowanceMinutes,
@@ -394,34 +473,15 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                                             onUpdateSensitivity = viewModel::updateSensitivity,
                                             onUpdateAudioAction = viewModel::updateAudioAction,
                                             onToggleHaptics = viewModel::setHapticsEnabled,
-                                            onOpenBlockMessageScreen = { modalScreen = ModalScreen.MINDFUL_PREVIEW }
+                                            onOpenBlockMessageScreen = onOpenBlockMessageScreen
                                         )
                                         MainTab.SCHEDULES -> SchedulesScreen(
                                             uiState = uiState,
                                             bottomContentPadding = screenBottomPadding,
                                             onUpsertSchedule = viewModel::upsertSchedule,
-                                            onToggleSchedule = { id, active ->
-                                                if (!active) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Pause Schedule?",
-                                                        subtitle = "Enter PIN to pause this schedule."
-                                                    ) { viewModel.toggleSchedule(id, false) }
-                                                } else {
-                                                    viewModel.toggleSchedule(id, true)
-                                                }
-                                            },
-                                            onDeleteSchedule = { id ->
-                                                guardWithPinIfNeeded(
-                                                    title = "Delete Schedule?",
-                                                    subtitle = "Enter PIN to delete this schedule."
-                                                ) { viewModel.deleteSchedule(id) }
-                                            },
-                                            onCancelQuickBoost = {
-                                                guardWithPinIfNeeded(
-                                                    title = "Cancel Focus Lock?",
-                                                    subtitle = "Enter PIN to end Focus Lock early."
-                                                ) { viewModel.cancelQuickBoost() }
-                                            }
+                                            onToggleSchedule = onToggleScheduleGuarded,
+                                            onDeleteSchedule = onDeleteScheduleGuarded,
+                                            onCancelQuickBoost = onCancelQuickBoostGuarded
                                         )
                                         MainTab.ACTIVITY -> StatisticsScreen(
                                             uiState = uiState,
@@ -432,30 +492,17 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                                         MainTab.SETTINGS -> SettingsScreen(
                                             uiState = uiState,
                                             bottomContentPadding = screenBottomPadding,
-                                            onToggleStrictMode = { enable ->
-                                                if (!enable) {
-                                                    guardWithPinIfNeeded(
-                                                        title = "Disable Strict Lock?",
-                                                        subtitle = "Enter PIN to re-enable hold-to-pass."
-                                                    ) { viewModel.setStrictMode(false) }
-                                                } else {
-                                                    viewModel.setStrictMode(true)
-                                                }
-                                            },
+                                            onToggleStrictMode = onToggleStrictModeGuarded,
                                             onSelectTheme = viewModel::setThemeMode,
                                             onToggleDynamicColor = viewModel::setDynamicColorEnabled,
                                             onSelectColorSeed = viewModel::setColorSeed,
+                                            onSaveCustomPalette = viewModel::setCustomPalette,
                                             onSelectContrast = viewModel::setContrastLevel,
                                             onSelectCornerStyle = viewModel::setCornerStyle,
                                             onSelectFontScale = viewModel::setFontScale,
                                             onSelectIconStyle = viewModel::setIconStyle,
-                                            onRequestPinSetup = { modalScreen = ModalScreen.PIN_SETUP },
-                                            onRequestDisablePin = {
-                                                guardWithPinIfNeeded(
-                                                    title = "Remove PIN Lock?",
-                                                    subtitle = "Enter your current 4-digit PIN."
-                                                ) { viewModel.disablePinLock() }
-                                            },
+                                            onRequestPinSetup = onRequestPinSetup,
+                                            onRequestDisablePin = onRequestDisablePinGuarded,
                                             onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
                                             onOpenBatterySettings = viewModel::openBatterySettings,
                                             onOpenNotificationSettings = viewModel::openNotificationSettings,
@@ -463,9 +510,7 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                                             onImportBackup = viewModel::importBackupJson,
                                             onClearHistory = viewModel::clearHistory,
                                             onReplayOnboarding = viewModel::resetOnboarding,
-                                            onShowMessage = { msg ->
-                                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                            }
+                                            onShowMessage = onShowMessage
                                         )
                                     }
                                 }
@@ -475,13 +520,7 @@ fun BlockReelsApp(viewModel: BlockReelsViewModel) {
                                 FloatingBottomNavBar(
                                     destinations = navDestinations,
                                     selectedId = selectedTab.name,
-                                    onSelect = { dest ->
-                                        val next = MainTab.valueOf(dest.id)
-                                        if (selectedTab != next) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            selectedTab = next
-                                        }
-                                    },
+                                    onSelect = onSelectBottomDestination,
                                     modifier = Modifier.align(Alignment.BottomCenter)
                                 )
                             }

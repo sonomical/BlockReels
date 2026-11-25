@@ -46,7 +46,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -57,7 +56,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -77,6 +75,7 @@ import com.blockreels.app.data.TargetAppConfig
 import com.blockreels.app.state.BlockingScope
 import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.ui.components.ExpressiveCard
+import com.blockreels.app.ui.components.ExpressiveShapes
 import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.ModeBadge
 import com.blockreels.app.ui.components.PlatformAvatar
@@ -223,7 +222,7 @@ fun SchedulesScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Surface(
-                                    shape = MaterialShapes.Cookie4Sided.toShape(),
+                                    shape = ExpressiveShapes.Cookie4Sided,
                                     color = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(44.dp)
@@ -279,7 +278,7 @@ fun SchedulesScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Surface(
-                                    shape = MaterialShapes.Cookie7Sided.toShape(),
+                                    shape = ExpressiveShapes.Cookie7Sided,
                                     color = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.size(64.dp)
@@ -315,7 +314,11 @@ fun SchedulesScreen(
                             title = "Rules (${uiState.activeRegularSchedulesCount}/${uiState.regularSchedules.size} active)"
                         )
                     }
-                    items(uiState.regularSchedules, key = { it.id }) { schedule ->
+                    items(
+                        items = uiState.regularSchedules,
+                        key = { it.id },
+                        contentType = { "schedule_card" }
+                    ) { schedule ->
                         ScheduleRuleCard(
                             schedule = schedule,
                             allTargets = uiState.targets,
@@ -374,7 +377,7 @@ private fun ScheduleCoverageHeader(
                     modifier = Modifier.weight(1f)
                 ) {
                     Surface(
-                        shape = MaterialShapes.Cookie7Sided.toShape(),
+                        shape = ExpressiveShapes.Cookie7Sided,
                         color = if (activeCount > 0 || focusLockActive) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {

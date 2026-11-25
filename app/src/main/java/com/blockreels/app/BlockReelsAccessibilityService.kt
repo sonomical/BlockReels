@@ -86,8 +86,12 @@ class BlockReelsAccessibilityService : AccessibilityService() {
     private val audioThread = HandlerThread("BlockReelsAudio")
     private lateinit var audioHandler: Handler
     private val instagramPackage = "com.instagram.android"
+    private val powerManager: PowerManager? by lazy(LazyThreadSafetyMode.NONE) {
+        getSystemService(POWER_SERVICE) as? PowerManager
+    }
     private var foregroundPackage: String? = null
-    private var lastWindowSignal: Pair<String?, Int>? = null
+    private var lastWindowPkg: String? = null
+    private var lastWindowId: Int = -1
     private var overlayCheck: Runnable? = null
     private var allowanceCheck: Runnable? = null
     private var leaveCheck: Job? = null
@@ -199,16 +203,20 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         val signal = Signal(pkg, type, event.eventTime, event.windowId)
         val sensitivityWindowMs = NativeStateStore.getInterventionConfig().sensitivity.debounceWindowMs
         if (windowEvent) {
-            val window = pkg to event.windowId
+            val windowId = event.windowId
+            val windowChanged = pkg != lastWindowPkg || windowId != lastWindowId
             val focusChanged = type == AccessibilityEvent.TYPE_WINDOWS_CHANGED &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
                 event.windowChanges and (AccessibilityEvent.WINDOWS_CHANGE_ACTIVE or
                     AccessibilityEvent.WINDOWS_CHANGE_FOCUSED) != 0
-            if (focusChanged || (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && window != lastWindowSignal)) {
+            if (focusChanged || (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && windowChanged)) {
                 scans.invalidate()
                 cancelEntryCheck()
             }
-            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) lastWindowSignal = window
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                lastWindowPkg = pkg
+                lastWindowId = windowId
+            }
         } else {
             if (pkg == null || interventionController.hasInterventionFor(pkg)) return
             if (type == AccessibilityEvent.TYPE_VIEW_CLICKED) {
@@ -368,7 +376,7 @@ class BlockReelsAccessibilityService : AccessibilityService() {
         if (overlayCheck != null || !interventionController.hasInterventionFor(packageName)) return
         val callback = Runnable {
             overlayCheck = null
-            if ((getSystemService(POWER_SERVICE) as? PowerManager)?.isInteractive == false) {
+            if (powerManager?.isInteractive == false) {
                 if (AppPlatform.fromPackageName(packageName) == AppPlatform.TIKTOK) {
                     interventionController.dismissOverlay()
                 }
@@ -418,16 +426,18 @@ class BlockReelsAccessibilityService : AccessibilityService() {
             if (trace.rootVisible != true || (!windowEvent && signal.pkg != null && signal.pkg != pkg)) {
                 return Screen(trace)
             }
+            val masterOn = NativeStateStore.isMasterEnabled()
+            val rule = NativeStateStore.getRule(pkg)
+            val activeSchedule = if (masterOn) NativeStateStore.findActiveSchedule(pkg) else null
+            val appEnabled = rule?.isEnabled ?: (NativeStateStore.getAppToggles()[pkg] == true)
             if (DetectionTrace.enabled) {
-                trace.masterEnabled = NativeStateStore.isMasterEnabled()
-                trace.appEnabled = NativeStateStore.getAppToggles()[pkg] == true
+                trace.masterEnabled = masterOn
+                trace.appEnabled = appEnabled
             }
-            trace.blockingActive = NativeStateStore.isAppBlockingActive(pkg)
+            trace.blockingActive = masterOn && (appEnabled || activeSchedule != null)
             trace.temporarilyAllowed = interventionController.isAppTemporarilyAllowed(pkg)
             if (!trace.blockingActive || trace.temporarilyAllowed) return Screen(trace)
 
-            val rule = NativeStateStore.getRule(pkg)
-            val activeSchedule = NativeStateStore.findActiveSchedule(pkg)
             val scope = InterventionConfigResolver.resolveScope(rule, activeSchedule)
             val contentPolicy = rule?.contentPolicy ?: com.blockreels.app.state.ContentBlockPolicy.REELS_ONLY
             if (scope == BlockingScope.ENTIRE_APP ||

@@ -5,8 +5,13 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.blockreels.app.data.AppColorSeed
 import com.blockreels.app.data.AppContrastLevel
+import com.blockreels.app.data.CustomPaletteConfig
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 // =============================================================================
 // Strict Material 3 Expressive Opaque Tonal Palettes
@@ -226,22 +231,179 @@ private val GraphiteSpec = PaletteSpec(
     outlineD = Color(0xFF8E9197), outlineVariantD = Color(0xFF44474C)
 )
 
-private fun specFor(seed: AppColorSeed): PaletteSpec = when (seed) {
+private fun specFor(seed: AppColorSeed, customPalette: CustomPaletteConfig): PaletteSpec = when (seed) {
     AppColorSeed.EMERALD -> EmeraldSpec
     AppColorSeed.OCEAN -> OceanSpec
     AppColorSeed.TERRACOTTA -> TerracottaSpec
     AppColorSeed.AMETHYST -> AmethystSpec
     AppColorSeed.FOREST -> ForestSpec
     AppColorSeed.GRAPHITE -> GraphiteSpec
+    AppColorSeed.CUSTOM -> buildCustomPaletteSpec(customPalette)
+}
+
+private fun buildCustomPaletteSpec(config: CustomPaletteConfig): PaletteSpec {
+    val pHsl = argbToHsl(config.primaryArgb)
+    val sHsl = argbToHsl(config.secondaryArgb)
+    val tHsl = argbToHsl(config.tertiaryArgb)
+
+    val pHue = pHsl[0]
+    val pSat = pHsl[1].coerceIn(0.18f, 0.92f)
+    val sHue = sHsl[0]
+    val sSat = sHsl[1].coerceIn(0.14f, 0.85f)
+    val tHue = tHsl[0]
+    val tSat = tHsl[1].coerceIn(0.18f, 0.90f)
+
+    val neutralSatLight = (0.04f + 0.14f * config.surfaceTintStrength.coerceIn(0f, 1f)) * (if (pHsl[1] < 0.08f) 0.2f else 1f)
+    val neutralSatDark = (0.05f + 0.16f * config.surfaceTintStrength.coerceIn(0f, 1f)) * (if (pHsl[1] < 0.08f) 0.2f else 1f)
+
+    // Light accent roles derived with readable tonal contrast
+    val primaryL = hslToColor(pHue, pSat, pHsl[2].coerceIn(0.28f, 0.42f))
+    val onPrimaryL = accessibleOnColor(primaryL)
+    val primaryContainerL = hslToColor(pHue, (pSat * 0.85f).coerceIn(0.20f, 0.82f), 0.89f)
+    val onPrimaryContainerL = hslToColor(pHue, (pSat * 0.90f).coerceAtMost(0.85f), 0.14f)
+
+    val secondaryL = hslToColor(sHue, sSat, sHsl[2].coerceIn(0.30f, 0.44f))
+    val onSecondaryL = accessibleOnColor(secondaryL)
+    val secondaryContainerL = hslToColor(sHue, (sSat * 0.78f).coerceIn(0.16f, 0.75f), 0.89f)
+    val onSecondaryContainerL = hslToColor(sHue, (sSat * 0.85f).coerceAtMost(0.80f), 0.15f)
+
+    val tertiaryL = hslToColor(tHue, tSat, tHsl[2].coerceIn(0.30f, 0.44f))
+    val onTertiaryL = accessibleOnColor(tertiaryL)
+    val tertiaryContainerL = hslToColor(tHue, (tSat * 0.85f).coerceIn(0.20f, 0.82f), 0.89f)
+    val onTertiaryContainerL = hslToColor(tHue, (tSat * 0.90f).coerceAtMost(0.85f), 0.15f)
+
+    // Dark accent roles derived for high-contrast legibility on dark surfaces
+    val primaryD = hslToColor(pHue, (pSat * 0.92f).coerceIn(0.28f, 0.86f), 0.77f)
+    val onPrimaryD = hslToColor(pHue, (pSat * 0.95f).coerceAtMost(0.90f), 0.16f)
+    val primaryContainerD = hslToColor(pHue, (pSat * 0.85f).coerceIn(0.22f, 0.78f), 0.27f)
+    val onPrimaryContainerD = hslToColor(pHue, (pSat * 0.85f).coerceIn(0.20f, 0.84f), 0.91f)
+
+    val secondaryD = hslToColor(sHue, (sSat * 0.85f).coerceIn(0.22f, 0.80f), 0.78f)
+    val onSecondaryD = hslToColor(sHue, (sSat * 0.90f).coerceAtMost(0.85f), 0.17f)
+    val secondaryContainerD = hslToColor(sHue, (sSat * 0.75f).coerceIn(0.18f, 0.70f), 0.28f)
+    val onSecondaryContainerD = hslToColor(sHue, (sSat * 0.80f).coerceIn(0.18f, 0.78f), 0.91f)
+
+    val tertiaryD = hslToColor(tHue, (tSat * 0.90f).coerceIn(0.25f, 0.85f), 0.77f)
+    val onTertiaryD = hslToColor(tHue, (tSat * 0.92f).coerceAtMost(0.88f), 0.17f)
+    val tertiaryContainerD = hslToColor(tHue, (tSat * 0.82f).coerceIn(0.22f, 0.76f), 0.28f)
+    val onTertiaryContainerD = hslToColor(tHue, (tSat * 0.84f).coerceIn(0.20f, 0.82f), 0.91f)
+
+    return PaletteSpec(
+        primaryL = primaryL,
+        onPrimaryL = onPrimaryL,
+        primaryContainerL = primaryContainerL,
+        onPrimaryContainerL = onPrimaryContainerL,
+        secondaryL = secondaryL,
+        onSecondaryL = onSecondaryL,
+        secondaryContainerL = secondaryContainerL,
+        onSecondaryContainerL = onSecondaryContainerL,
+        tertiaryL = tertiaryL,
+        onTertiaryL = onTertiaryL,
+        tertiaryContainerL = tertiaryContainerL,
+        onTertiaryContainerL = onTertiaryContainerL,
+        surfaceL = hslToColor(pHue, neutralSatLight, 0.975f),
+        surfaceDimL = hslToColor(pHue, neutralSatLight, 0.855f),
+        surfaceLowestL = Color(0xFFFFFFFF),
+        surfaceLowL = hslToColor(pHue, neutralSatLight, 0.950f),
+        surfaceContainerL = hslToColor(pHue, neutralSatLight, 0.928f),
+        surfaceHighL = hslToColor(pHue, neutralSatLight, 0.905f),
+        surfaceHighestL = hslToColor(pHue, neutralSatLight, 0.882f),
+        onSurfaceL = hslToColor(pHue, neutralSatLight * 0.9f, 0.11f),
+        onSurfaceVariantL = hslToColor(pHue, neutralSatLight * 1.1f, 0.28f),
+        outlineL = hslToColor(pHue, neutralSatLight * 0.9f, 0.47f),
+        outlineVariantL = hslToColor(pHue, neutralSatLight, 0.77f),
+        primaryD = primaryD,
+        onPrimaryD = onPrimaryD,
+        primaryContainerD = primaryContainerD,
+        onPrimaryContainerD = onPrimaryContainerD,
+        secondaryD = secondaryD,
+        onSecondaryD = onSecondaryD,
+        secondaryContainerD = secondaryContainerD,
+        onSecondaryContainerD = onSecondaryContainerD,
+        tertiaryD = tertiaryD,
+        onTertiaryD = onTertiaryD,
+        tertiaryContainerD = tertiaryContainerD,
+        onTertiaryContainerD = onTertiaryContainerD,
+        surfaceD = hslToColor(pHue, neutralSatDark, 0.075f),
+        surfaceBrightD = hslToColor(pHue, neutralSatDark, 0.225f),
+        surfaceLowestD = hslToColor(pHue, neutralSatDark, 0.052f),
+        surfaceLowD = hslToColor(pHue, neutralSatDark, 0.105f),
+        surfaceContainerD = hslToColor(pHue, neutralSatDark, 0.125f),
+        surfaceHighD = hslToColor(pHue, neutralSatDark, 0.165f),
+        surfaceHighestD = hslToColor(pHue, neutralSatDark, 0.205f),
+        onSurfaceD = hslToColor(pHue, neutralSatDark * 0.6f, 0.895f),
+        onSurfaceVariantD = hslToColor(pHue, neutralSatDark * 0.9f, 0.775f),
+        outlineD = hslToColor(pHue, neutralSatDark * 0.8f, 0.56f),
+        outlineVariantD = hslToColor(pHue, neutralSatDark, 0.275f)
+    )
+}
+
+private fun accessibleOnColor(background: Color): Color {
+    return if (background.luminance() > 0.42f) Color(0xFF101414) else Color(0xFFFFFFFF)
+}
+
+fun argbToHsl(argb: Long): FloatArray {
+    val r = ((argb shr 16) and 0xFF) / 255f
+    val g = ((argb shr 8) and 0xFF) / 255f
+    val b = (argb and 0xFF) / 255f
+    val maxC = max(r, max(g, b))
+    val minC = min(r, min(g, b))
+    val delta = maxC - minC
+    val l = (maxC + minC) / 2f
+    val s = if (delta == 0f) 0f else delta / (1f - abs(2f * l - 1f))
+    val h = when {
+        delta == 0f -> 0f
+        maxC == r -> 60f * (((g - b) / delta) % 6f)
+        maxC == g -> 60f * (((b - r) / delta) + 2f)
+        else -> 60f * (((r - g) / delta) + 4f)
+    }.let { if (it < 0f) it + 360f else it }
+    return floatArrayOf(h, s.coerceIn(0f, 1f), l.coerceIn(0f, 1f))
+}
+
+fun hslToArgb(hue: Float, saturation: Float, lightness: Float): Long {
+    val h = ((hue % 360f) + 360f) % 360f
+    val s = saturation.coerceIn(0f, 1f)
+    val l = lightness.coerceIn(0f, 1f)
+    val c = (1f - abs(2f * l - 1f)) * s
+    val x = c * (1f - abs((h / 60f) % 2f - 1f))
+    val m = l - c / 2f
+    val (r1, g1, b1) = when {
+        h < 60f -> Triple(c, x, 0f)
+        h < 120f -> Triple(x, c, 0f)
+        h < 180f -> Triple(0f, c, x)
+        h < 240f -> Triple(0f, x, c)
+        h < 300f -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+    val r = ((r1 + m) * 255f).toInt().coerceIn(0, 255)
+    val g = ((g1 + m) * 255f).toInt().coerceIn(0, 255)
+    val b = ((b1 + m) * 255f).toInt().coerceIn(0, 255)
+    return (0xFFL shl 24) or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()
+}
+
+fun hslToColor(hue: Float, saturation: Float, lightness: Float): Color =
+    Color(hslToArgb(hue, saturation, lightness))
+
+fun formatArgbHex(argb: Long): String {
+    val rgb = (argb and 0x00FFFFFFL).toInt()
+    return String.format("#%06X", rgb)
+}
+
+fun parseHexToArgb(raw: String): Long? {
+    val cleaned = raw.trim().removePrefix("#").uppercase()
+    if (cleaned.length != 6) return null
+    val rgb = cleaned.toLongOrNull(16) ?: return null
+    return 0xFF000000L or rgb
 }
 
 fun buildSeedColorScheme(
     seed: AppColorSeed,
     isDark: Boolean,
     amoled: Boolean,
-    contrast: AppContrastLevel
+    contrast: AppContrastLevel,
+    customPalette: CustomPaletteConfig = CustomPaletteConfig()
 ): ColorScheme {
-    val s = specFor(seed)
+    val s = specFor(seed, customPalette)
     val base = if (!isDark) {
         lightColorScheme(
             primary = s.primaryL,

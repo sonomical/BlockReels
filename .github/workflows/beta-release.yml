@@ -1,0 +1,212 @@
+name: Beta Release CD
+
+on:
+  push:
+    branches: [beta]
+    tags:
+      - 'v*-beta*'
+      - 'v*-rc*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Beta release tag (e.g. v1.1.0-beta.1)'
+        required: true
+        default: 'v1.1.0-beta.1'
+      release_notes:
+        description: 'Optional extra beta release notes'
+        required: false
+        default: ''
+      publish_play_beta:
+        description: 'Upload signed AAB to Google Play beta track (requires PLAY_SERVICE_ACCOUNT_JSON)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+
+      - name: Verify zero-network manifest invariant
+        run: |
+          if grep -q 'uses-permission.*android\.permission\.INTERNET' app/src/main/AndroidManifest.xml; then
+            echo "ERROR: android.permission.INTERNET must not be declared."
+            exit 1
+          fi
+
+      - name: Generate ephemeral debug keystore for test runner
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v -keystore debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Run unit test suite
+        run: gradle :app:testDebugUnitTest --stacktrace
+
+  build-and-publish-beta:
+    name: Build & Publish Beta Release
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve beta tag name
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION_NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+            SHORT_SHA="${GITHUB_SHA::7}"
+            TAG="v${VERSION_NAME:-1.1.0-beta.1}-${SHORT_SHA}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+
+      - name: Generate ephemeral debug keystore
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v -keystore debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build Debug Beta APK and Minified Release APK + AAB
+        run: |
+          gradle :app:assembleDebug :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Sign Release APK and AAB (if release keystore secrets are configured)
+        id: sign
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          mkdir -p dist
+          TAG="${{ steps.meta.outputs.tag }}"
+          BUILD_TOOLS=$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_KEYSTORE_PASSWORD" ] && [ -n "$RELEASE_KEY_ALIAS" ] && [ -n "$RELEASE_KEY_PASSWORD" ]; then
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release-ci.keystore
+            UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+            [ -f "$UNSIGNED_APK" ] || UNSIGNED_APK="app/build/outputs/apk/release/app-release.apk"
+
+            "$ZIPALIGN" -f -p 4 "$UNSIGNED_APK" "dist/aligned.apk"
+            "$APKSIGNER" sign \
+              --ks release-ci.keystore \
+              --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
+              --ks-key-alias "$RELEASE_KEY_ALIAS" \
+              --key-pass "pass:$RELEASE_KEY_PASSWORD" \
+              --out "dist/blockreels-${TAG}.apk" \
+              "dist/aligned.apk"
+            rm -f "dist/aligned.apk"
+            "$APKSIGNER" verify --verbose "dist/blockreels-${TAG}.apk"
+
+            cp app/build/outputs/bundle/release/app-release.aab "dist/blockreels-${TAG}.aab"
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+              -keystore release-ci.keystore \
+              -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+              -keypass "$RELEASE_KEY_PASSWORD" \
+              "dist/blockreels-${TAG}.aab" \
+              "$RELEASE_KEY_ALIAS"
+            rm -f release-ci.keystore
+
+            echo "signed_release=true" >> "$GITHUB_OUTPUT"
+            echo "aab_path=dist/blockreels-${TAG}.aab" >> "$GITHUB_OUTPUT"
+          else
+            cp app/build/outputs/apk/debug/app-debug.apk "dist/blockreels-${TAG}-debug-beta.apk"
+            UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+            [ -f "$UNSIGNED_APK" ] || UNSIGNED_APK="app/build/outputs/apk/release/app-release.apk"
+            cp "$UNSIGNED_APK" "dist/blockreels-${TAG}-release-unsigned.apk"
+            cp app/build/outputs/bundle/release/app-release.aab "dist/blockreels-${TAG}-release-unsigned.aab"
+            echo "signed_release=false" >> "$GITHUB_OUTPUT"
+            echo "aab_path=" >> "$GITHUB_OUTPUT"
+          fi
+
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          ls -la dist
+
+      - name: Upload Beta Artifacts to Workflow Run
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockreels-beta-${{ steps.meta.outputs.tag }}
+          path: dist/
+          retention-days: 30
+
+      - name: Publish GitHub Beta Pre-Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: BlockReels ${{ steps.meta.outputs.tag }} (Beta)
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            ## BlockReels Beta Release (`${{ steps.meta.outputs.tag }}`)
+
+            ${{ inputs.release_notes }}
+
+            - **Signed with release keystore:** `${{ steps.sign.outputs.signed_release }}`
+            - **Zero-network privacy check:** Passed (`android.permission.INTERNET` absent)
+            - **Unit test suite:** Passed (`:app:testDebugUnitTest`)
+
+            > To enable production release signing automatically in CI, configure repository secrets:
+            > `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD`.
+          files: |
+            dist/*
+
+      - name: Upload Signed AAB to Google Play Beta Track (Optional)
+        if: |
+          steps.sign.outputs.signed_release == 'true' &&
+          (inputs.publish_play_beta == true || startsWith(github.ref, 'refs/tags/v')) &&
+          secrets.PLAY_SERVICE_ACCOUNT_JSON != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.blockreels.app
+          releaseFiles: ${{ steps.sign.outputs.aab_path }}
+          track: beta
+          status: completed

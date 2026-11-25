@@ -21,8 +21,17 @@ enum class AppColorSeed(val label: String, val swatchHex: Long) {
     TERRACOTTA("Terracotta", 0xFF9C4327),
     AMETHYST("Amethyst", 0xFF6B4FA2),
     FOREST("Forest", 0xFF386A20),
-    GRAPHITE("Graphite", 0xFF475569)
+    GRAPHITE("Graphite", 0xFF475569),
+    CUSTOM("Custom", 0xFF0F766E)
 }
+
+@Immutable
+data class CustomPaletteConfig(
+    val primaryArgb: Long = 0xFF0F766E,
+    val secondaryArgb: Long = 0xFF4F46E5,
+    val tertiaryArgb: Long = 0xFFD97706,
+    val surfaceTintStrength: Float = 0.35f
+)
 
 enum class AppContrastLevel(val label: String) {
     STANDARD("Standard"),
@@ -155,6 +164,7 @@ data class AppSettingsState(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val dynamicColorEnabled: Boolean = false,
     val colorSeed: AppColorSeed = AppColorSeed.EMERALD,
+    val customPalette: CustomPaletteConfig = CustomPaletteConfig(),
     val contrastLevel: AppContrastLevel = AppContrastLevel.STANDARD,
     val cornerStyle: AppCornerStyle = AppCornerStyle.EXPRESSIVE,
     val fontScale: AppFontScale = AppFontScale.DEFAULT,

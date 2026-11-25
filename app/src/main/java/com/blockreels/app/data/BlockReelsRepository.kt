@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.blockreels.app.state.AudioAction
@@ -17,6 +19,8 @@ import com.blockreels.app.state.NativeStateStore
 import com.blockreels.app.state.PendingBlockEventStore
 import com.blockreels.app.state.ScheduleRule
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -49,6 +53,10 @@ class BlockReelsRepository(private val context: Context) {
     private val KEY_THEME_MODE = stringPreferencesKey("ui_theme_mode")
     private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("ui_dynamic_color")
     private val KEY_COLOR_SEED = stringPreferencesKey("ui_color_seed")
+    private val KEY_CUSTOM_PRIMARY = longPreferencesKey("ui_custom_primary_argb")
+    private val KEY_CUSTOM_SECONDARY = longPreferencesKey("ui_custom_secondary_argb")
+    private val KEY_CUSTOM_TERTIARY = longPreferencesKey("ui_custom_tertiary_argb")
+    private val KEY_CUSTOM_SURFACE_TINT = floatPreferencesKey("ui_custom_surface_tint")
     private val KEY_CONTRAST_LEVEL = stringPreferencesKey("ui_contrast_level")
     private val KEY_CORNER_STYLE = stringPreferencesKey("ui_corner_style")
     private val KEY_FONT_SCALE = stringPreferencesKey("ui_font_scale")
@@ -66,8 +74,12 @@ class BlockReelsRepository(private val context: Context) {
     )
 
     suspend fun loadAll(): LoadedSnapshot = withContext(Dispatchers.IO) {
-        NativeStateStore.initialize(context).await()
-        val prefs = context.uiDataStore.data.first()
+        val prefs = coroutineScope {
+            val nativeInit = async { NativeStateStore.initialize(context).await() }
+            val uiPrefsDeferred = async { context.uiDataStore.data.first() }
+            nativeInit.await()
+            uiPrefsDeferred.await()
+        }
 
         val legacySound = prefs[KEY_SOUND] ?: true
         val audioAction = prefs[KEY_AUDIO_ACTION]?.let(NativeStateStore::parseAudioAction)
@@ -98,6 +110,12 @@ class BlockReelsRepository(private val context: Context) {
             themeMode = parseTheme(prefs[KEY_THEME_MODE]),
             dynamicColorEnabled = prefs[KEY_DYNAMIC_COLOR] ?: false,
             colorSeed = BackupCodec.parseColorSeed(prefs[KEY_COLOR_SEED]),
+            customPalette = CustomPaletteConfig(
+                primaryArgb = (prefs[KEY_CUSTOM_PRIMARY] ?: 0xFF0F766EL) or 0xFF000000L,
+                secondaryArgb = (prefs[KEY_CUSTOM_SECONDARY] ?: 0xFF4F46E5L) or 0xFF000000L,
+                tertiaryArgb = (prefs[KEY_CUSTOM_TERTIARY] ?: 0xFFD97706L) or 0xFF000000L,
+                surfaceTintStrength = (prefs[KEY_CUSTOM_SURFACE_TINT] ?: 0.35f).coerceIn(0f, 1f)
+            ),
             contrastLevel = BackupCodec.parseContrastLevel(prefs[KEY_CONTRAST_LEVEL]),
             cornerStyle = BackupCodec.parseCornerStyle(prefs[KEY_CORNER_STYLE]),
             fontScale = BackupCodec.parseFontScale(prefs[KEY_FONT_SCALE]),
@@ -121,14 +139,20 @@ class BlockReelsRepository(private val context: Context) {
             saveHistoryInternal(mergedHistory)
         }
 
-        syncToNativeStateStore(settings, targets, schedules)
-
         LoadedSnapshot(
             settings = settings,
             targets = targets,
             schedules = schedules,
             history = mergedHistory
         )
+    }
+
+    suspend fun syncProtectionState(
+        settings: AppSettingsState,
+        targets: List<TargetAppConfig>,
+        schedules: List<ScheduleItem>
+    ) = withContext(Dispatchers.IO) {
+        syncToNativeStateStore(settings, targets, schedules)
     }
 
     suspend fun drainPendingNativeEvents(): List<HistoryRecord> = withContext(Dispatchers.IO) {
@@ -182,6 +206,10 @@ class BlockReelsRepository(private val context: Context) {
             prefs[KEY_THEME_MODE] = settings.themeMode.name
             prefs[KEY_DYNAMIC_COLOR] = settings.dynamicColorEnabled
             prefs[KEY_COLOR_SEED] = settings.colorSeed.name
+            prefs[KEY_CUSTOM_PRIMARY] = settings.customPalette.primaryArgb
+            prefs[KEY_CUSTOM_SECONDARY] = settings.customPalette.secondaryArgb
+            prefs[KEY_CUSTOM_TERTIARY] = settings.customPalette.tertiaryArgb
+            prefs[KEY_CUSTOM_SURFACE_TINT] = settings.customPalette.surfaceTintStrength
             prefs[KEY_CONTRAST_LEVEL] = settings.contrastLevel.name
             prefs[KEY_CORNER_STYLE] = settings.cornerStyle.name
             prefs[KEY_FONT_SCALE] = settings.fontScale.name
@@ -208,6 +236,50 @@ class BlockReelsRepository(private val context: Context) {
         schedules: List<ScheduleItem>
     ) = withContext(Dispatchers.IO) {
         context.uiDataStore.edit { prefs ->
+            prefs[KEY_SCHEDULES_JSON] = encodeSchedulesJson(schedules)
+        }
+        syncToNativeStateStore(settings, targets, schedules)
+    }
+
+    suspend fun saveAll(
+        settings: AppSettingsState,
+        targets: List<TargetAppConfig>,
+        schedules: List<ScheduleItem>
+    ) = withContext(Dispatchers.IO) {
+        context.uiDataStore.edit { prefs ->
+            prefs[KEY_MASTER] = settings.masterEnabled
+            prefs[KEY_GLOBAL_MODE] = settings.globalMode.name
+            prefs[KEY_HOLD_SECONDS] = settings.holdDurationSeconds
+            prefs[KEY_ALLOWANCE_MINUTES] = settings.allowanceMinutes
+            prefs[KEY_DAILY_PASS_LIMIT] = settings.dailyPassLimit
+            prefs[KEY_ENTRY_DELAY_SECONDS] = settings.entryDelaySeconds
+            prefs[KEY_SENSITIVITY] = settings.sensitivity.name
+            prefs[KEY_AUDIO_ACTION] = settings.audioAction.name
+            prefs[KEY_CUSTOM_HEADLINE] = settings.customMessageHeadline
+            prefs[KEY_CUSTOM_MSG] = settings.customMessage
+            prefs[KEY_DEFAULT_CONTENT_POLICY] = settings.defaultContentPolicy.name
+            prefs[KEY_DEFAULT_HIDE_SURFACES] = settings.defaultRequestHideSurfaces
+            prefs[KEY_DEFAULT_REELS_GOAL] = settings.defaultReelsGoalMinutes
+            prefs[KEY_DEFAULT_FEED_GOAL] = settings.defaultFeedGoalMinutes
+            prefs[KEY_SOUND] = settings.audioAction != AudioAction.NONE
+            prefs[KEY_HAPTICS] = settings.hapticsEnabled
+            prefs[KEY_PIN_PROTECTED] = settings.pinProtected
+            prefs[KEY_PIN_HASH] = settings.pinHash
+            prefs[KEY_PIN_SALT] = settings.pinSalt
+            prefs[KEY_STRICT_MODE] = settings.strictMode
+            prefs[KEY_THEME_MODE] = settings.themeMode.name
+            prefs[KEY_DYNAMIC_COLOR] = settings.dynamicColorEnabled
+            prefs[KEY_COLOR_SEED] = settings.colorSeed.name
+            prefs[KEY_CUSTOM_PRIMARY] = settings.customPalette.primaryArgb
+            prefs[KEY_CUSTOM_SECONDARY] = settings.customPalette.secondaryArgb
+            prefs[KEY_CUSTOM_TERTIARY] = settings.customPalette.tertiaryArgb
+            prefs[KEY_CUSTOM_SURFACE_TINT] = settings.customPalette.surfaceTintStrength
+            prefs[KEY_CONTRAST_LEVEL] = settings.contrastLevel.name
+            prefs[KEY_CORNER_STYLE] = settings.cornerStyle.name
+            prefs[KEY_FONT_SCALE] = settings.fontScale.name
+            prefs[KEY_ICON_STYLE] = settings.iconStyle.name
+            prefs[KEY_ONBOARDING_DONE] = settings.onboardingCompleted
+            prefs[KEY_TARGETS_JSON] = encodeTargetsJson(targets)
             prefs[KEY_SCHEDULES_JSON] = encodeSchedulesJson(schedules)
         }
         syncToNativeStateStore(settings, targets, schedules)
@@ -410,6 +482,12 @@ object BackupCodec {
                 put("themeMode", settings.themeMode.name)
                 put("dynamicColorEnabled", settings.dynamicColorEnabled)
                 put("colorSeed", settings.colorSeed.name)
+                put("customPalette", JSONObject().apply {
+                    put("primaryArgb", settings.customPalette.primaryArgb)
+                    put("secondaryArgb", settings.customPalette.secondaryArgb)
+                    put("tertiaryArgb", settings.customPalette.tertiaryArgb)
+                    put("surfaceTintStrength", settings.customPalette.surfaceTintStrength.toDouble())
+                })
                 put("contrastLevel", settings.contrastLevel.name)
                 put("cornerStyle", settings.cornerStyle.name)
                 put("fontScale", settings.fontScale.name)
@@ -465,6 +543,14 @@ object BackupCodec {
                 themeMode = parseTheme(settingsObj.optString("themeMode")),
                 dynamicColorEnabled = settingsObj.optBoolean("dynamicColorEnabled", false),
                 colorSeed = parseColorSeed(settingsObj.optString("colorSeed")),
+                customPalette = settingsObj.optJSONObject("customPalette")?.let { cp ->
+                    CustomPaletteConfig(
+                        primaryArgb = (cp.optLong("primaryArgb", 0xFF0F766EL)) or 0xFF000000L,
+                        secondaryArgb = (cp.optLong("secondaryArgb", 0xFF4F46E5L)) or 0xFF000000L,
+                        tertiaryArgb = (cp.optLong("tertiaryArgb", 0xFFD97706L)) or 0xFF000000L,
+                        surfaceTintStrength = cp.optDouble("surfaceTintStrength", 0.35).toFloat().coerceIn(0f, 1f)
+                    )
+                } ?: currentSettings.customPalette,
                 contrastLevel = parseContrastLevel(settingsObj.optString("contrastLevel")),
                 cornerStyle = parseCornerStyle(settingsObj.optString("cornerStyle")),
                 fontScale = parseFontScale(settingsObj.optString("fontScale")),

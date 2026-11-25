@@ -113,4 +113,52 @@ class ScheduleAndThrottlerTest {
             )
         )
     }
+
+    @Test
+    fun nativeStateStoreInitializesCleanlyWithoutNullCalendarPool() {
+        assertTrue(com.blockreels.app.state.NativeStateStore.isMasterEnabled())
+        assertTrue(com.blockreels.app.state.NativeStateStore.getAppToggles()["com.instagram.android"] == true)
+        assertFalse(com.blockreels.app.state.NativeStateStore.isAppBlockingActive("com.instagram.android"))
+        assertTrue(com.blockreels.app.state.NativeStateStore.getAllPassesUsedToday().isEmpty())
+        assertTrue(com.blockreels.app.state.NativeStateStore.getMetricsSnapshot()["totalBlockedToday"] == 0)
+        com.blockreels.app.state.NativeStateStore.findActiveSchedule("com.instagram.android")
+    }
+
+    @Test
+    fun customPaletteHexAndHslRoundTripProducesOpaqueSchemes() {
+        val parsed = com.blockreels.app.ui.theme.parseHexToArgb("#D9465F")
+        assertTrue(parsed == 0xFFD9465FL)
+        assertTrue(com.blockreels.app.ui.theme.formatArgbHex(parsed!!) == "#D9465F")
+        assertTrue(com.blockreels.app.ui.theme.parseHexToArgb("nothex") == null)
+
+        val hsl = com.blockreels.app.ui.theme.argbToHsl(0xFF00796BL)
+        val roundTripped = com.blockreels.app.ui.theme.hslToArgb(hsl[0], hsl[1], hsl[2])
+        assertTrue((roundTripped ushr 24) == 0xFFL)
+
+        val custom = com.blockreels.app.data.CustomPaletteConfig(
+            primaryArgb = 0xFFD9465FL,
+            secondaryArgb = 0xFF7C3AEDL,
+            tertiaryArgb = 0xFFEAB308L,
+            surfaceTintStrength = 0.6f
+        )
+        val light = com.blockreels.app.ui.theme.buildSeedColorScheme(
+            seed = com.blockreels.app.data.AppColorSeed.CUSTOM,
+            isDark = false,
+            amoled = false,
+            contrast = com.blockreels.app.data.AppContrastLevel.STANDARD,
+            customPalette = custom
+        )
+        val darkAmoled = com.blockreels.app.ui.theme.buildSeedColorScheme(
+            seed = com.blockreels.app.data.AppColorSeed.CUSTOM,
+            isDark = true,
+            amoled = true,
+            contrast = com.blockreels.app.data.AppContrastLevel.HIGH,
+            customPalette = custom
+        )
+
+        assertTrue(light.primary.alpha == 1f)
+        assertTrue(light.surfaceContainer.alpha == 1f)
+        assertTrue(darkAmoled.primary.alpha == 1f)
+        assertTrue(darkAmoled.background == androidx.compose.ui.graphics.Color(0xFF000000))
+    }
 }

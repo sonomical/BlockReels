@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -35,12 +36,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -66,6 +65,7 @@ import com.blockreels.app.data.StatsRange
 import com.blockreels.app.data.SupportedTargets
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
 import com.blockreels.app.ui.components.ExpressiveCard
+import com.blockreels.app.ui.components.ExpressiveShapes
 import com.blockreels.app.ui.components.ModeBadge
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.SectionHeader
@@ -127,6 +127,7 @@ fun StatisticsScreen(
     val filteredHistory = remember(uiState.history, effectiveFilter) {
         if (effectiveFilter == null) uiState.history else uiState.history.filter { it.platformKey == effectiveFilter }
     }
+    val visibleHistory = remember(filteredHistory) { filteredHistory.take(30) }
 
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -134,10 +135,13 @@ fun StatisticsScreen(
                 .fillMaxSize()
                 .widthIn(max = 680.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomContentPadding),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            item(key = "range_selector") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item(key = "range_selector", contentType = "range_selector") {
+                Column(
+                    modifier = Modifier.padding(bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     ConnectedToggleButtonGroup(
                         options = StatsRange.entries,
                         selected = uiState.selectedStatsRange,
@@ -190,8 +194,11 @@ fun StatisticsScreen(
                 }
             }
 
-            item(key = "summary_grid") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item(key = "summary_grid", contentType = "summary_grid") {
+                Column(
+                    modifier = Modifier.padding(bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -245,18 +252,25 @@ fun StatisticsScreen(
                 }
             }
 
-            item(key = "weekly_chart") {
-                WeeklyActivityChartCard(series = analytics.dailySeries)
-            }
-
-            if (analytics.platformBreakdown.isNotEmpty()) {
-                item(key = "platform_breakdown") {
-                    PlatformBreakdownCard(items = analytics.platformBreakdown)
+            item(key = "weekly_chart", contentType = "weekly_chart") {
+                Box(modifier = Modifier.padding(bottom = 14.dp)) {
+                    WeeklyActivityChartCard(series = analytics.dailySeries)
                 }
             }
 
-            item(key = "log_section") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (analytics.platformBreakdown.isNotEmpty()) {
+                item(key = "platform_breakdown", contentType = "platform_breakdown") {
+                    Box(modifier = Modifier.padding(bottom = 14.dp)) {
+                        PlatformBreakdownCard(items = analytics.platformBreakdown)
+                    }
+                }
+            }
+
+            item(key = "log_header", contentType = "log_header") {
+                Column(
+                    modifier = Modifier.padding(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     SectionHeader(
                         title = "Log (${filteredHistory.size})",
                         trailing = {
@@ -305,80 +319,83 @@ fun StatisticsScreen(
                             }
                         }
                     }
+                }
+            }
 
-                    if (filteredHistory.isEmpty()) {
-                        ExpressiveCard(shape = MaterialTheme.shapes.extraLarge) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+            if (visibleHistory.isEmpty()) {
+                item(key = "log_empty", contentType = "log_empty") {
+                    ExpressiveCard(shape = MaterialTheme.shapes.extraLarge) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Surface(
+                                shape = ExpressiveShapes.Cookie7Sided,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
                             ) {
-                                Surface(
-                                    shape = MaterialShapes.Cookie7Sided.toShape(),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(56.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.History,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(26.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "No events recorded",
-                                    style = MaterialTheme.typography.titleMediumEmphasized
-                                )
-                                Text(
-                                    text = "Interceptions appear here locally as soon as a guarded feed is blocked.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    } else {
-                        val visible = filteredHistory.take(30)
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            visible.forEachIndexed { idx, record ->
-                                Surface(
-                                    shape = segmentedListShape(idx, visible.size),
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow
-                                ) {
-                                    ListItem(
-                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                        leadingContent = {
-                                            PlatformAvatar(
-                                                platformKey = record.platformKey,
-                                                packageName = record.packageName,
-                                                sizeDp = 40
-                                            )
-                                        },
-                                        headlineContent = {
-                                            Text(
-                                                text = record.appLabel,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        },
-                                        supportingContent = {
-                                            Text(
-                                                text = formatRelativeTime(record.timestampMillis, uiState.nowMillis),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        },
-                                        trailingContent = {
-                                            ModeBadge(mode = record.interventionMode, compact = true)
-                                        }
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.History,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 }
                             }
+                            Text(
+                                text = "No events recorded",
+                                style = MaterialTheme.typography.titleMediumEmphasized
+                            )
+                            Text(
+                                text = "Interceptions appear here locally as soon as a guarded feed is blocked.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                    }
+                }
+            } else {
+                itemsIndexed(
+                    items = visibleHistory,
+                    key = { _, record -> record.id },
+                    contentType = { _, _ -> "history_row" }
+                ) { idx, record ->
+                    Surface(
+                        shape = segmentedListShape(idx, visibleHistory.size),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                    ) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            leadingContent = {
+                                PlatformAvatar(
+                                    platformKey = record.platformKey,
+                                    packageName = record.packageName,
+                                    sizeDp = 40
+                                )
+                            },
+                            headlineContent = {
+                                Text(
+                                    text = record.appLabel,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = formatRelativeTime(record.timestampMillis, uiState.nowMillis),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            trailingContent = {
+                                ModeBadge(mode = record.interventionMode, compact = true)
+                            }
+                        )
                     }
                 }
             }
@@ -409,7 +426,7 @@ private fun StatHeroTile(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Surface(
-                shape = MaterialShapes.Cookie4Sided.toShape(),
+                shape = ExpressiveShapes.Cookie4Sided,
                 color = badgeContainer,
                 contentColor = badgeContent,
                 modifier = Modifier.size(34.dp)
@@ -474,7 +491,7 @@ private fun WeeklyActivityChartCard(series: List<DayCountPoint>) {
                 }
             )
 
-            val maxCount = (series.maxOfOrNull { it.count } ?: 0).coerceAtLeast(1)
+            val maxCount = remember(series) { (series.maxOfOrNull { it.count } ?: 0).coerceAtLeast(1) }
             val selectedBarColor = MaterialTheme.colorScheme.primary
             val todayBarColor = MaterialTheme.colorScheme.secondary
             val normalBarColor = MaterialTheme.colorScheme.secondaryContainer

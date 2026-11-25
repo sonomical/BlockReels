@@ -32,7 +32,7 @@ class TraversalEngine(
         var budgetExhausted = false
         var depthLimitReached = false
 
-        val queue = ArrayDeque<PendingNode>()
+        val queue = ArrayDeque<PendingNode>(minOf(maxBudget, 64))
         queue.add(PendingNode(root, 0, null))
 
         while (queue.isNotEmpty() && nodesCount < maxBudget && isCurrent()) {

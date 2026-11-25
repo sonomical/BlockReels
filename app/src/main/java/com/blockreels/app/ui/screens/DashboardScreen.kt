@@ -49,14 +49,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +88,7 @@ import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.ui.components.AccessibilityDisclosureDialog
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
 import com.blockreels.app.ui.components.ExpressiveCard
+import com.blockreels.app.ui.components.ExpressiveShapes
 import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.ModeBadge
 import com.blockreels.app.ui.components.NumberInputDialog
@@ -204,8 +203,9 @@ fun DashboardScreen(
 
             // 6. Protected Apps Deck with Real Themed Icons
             item(key = "quick_toggles") {
+                val quickTargets = remember(uiState.targets) { uiState.targets.take(6) }
                 GuardedTargetsGrid(
-                    targets = uiState.targets.take(6),
+                    targets = quickTargets,
                     enabledCount = uiState.enabledTargetsCount,
                     totalCount = uiState.targets.size,
                     onToggleTarget = onToggleTargetApp,
@@ -276,7 +276,7 @@ fun DashboardScreen(
                             }
                         }
                     } else {
-                        val recent = uiState.history.take(4)
+                        val recent = remember(uiState.history) { uiState.history.take(4) }
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             recent.forEachIndexed { index, record ->
                                 Surface(
@@ -347,9 +347,9 @@ private fun ProtectionHeroCard(
     )
 
     val emblemShape = when (status) {
-        ProtectionStatus.PROTECTED -> MaterialShapes.Cookie9Sided.toShape()
-        ProtectionStatus.PAUSED -> MaterialShapes.Pill.toShape()
-        ProtectionStatus.PERMISSION_NEEDED -> MaterialShapes.Slanted.toShape()
+        ProtectionStatus.PROTECTED -> ExpressiveShapes.Cookie9Sided
+        ProtectionStatus.PAUSED -> ExpressiveShapes.Pill
+        ProtectionStatus.PERMISSION_NEEDED -> ExpressiveShapes.Slanted
     }
 
     Surface(
@@ -600,7 +600,7 @@ private fun PrimarySummaryCard(
                     modifier = Modifier.weight(1f)
                 )
                 Surface(
-                    shape = MaterialShapes.Cookie4Sided.toShape(),
+                    shape = ExpressiveShapes.Cookie4Sided,
                     color = badgeContainer,
                     contentColor = badgeContent,
                     modifier = Modifier.size(32.dp)
@@ -746,7 +746,7 @@ private fun WeeklyPulseSummaryCard(
             }
 
             if (series.isNotEmpty()) {
-                val maxCount = (series.maxOfOrNull { it.count } ?: 0).coerceAtLeast(1)
+                val maxCount = remember(series) { (series.maxOfOrNull { it.count } ?: 0).coerceAtLeast(1) }
                 val activeBarColor = MaterialTheme.colorScheme.primary
                 val normalBarColor = MaterialTheme.colorScheme.secondary
                 val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest

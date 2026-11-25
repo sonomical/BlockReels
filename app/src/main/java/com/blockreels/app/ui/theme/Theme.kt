@@ -26,6 +26,7 @@ import com.blockreels.app.data.AppCornerStyle
 import com.blockreels.app.data.AppFontScale
 import com.blockreels.app.data.AppIconStyle
 import com.blockreels.app.data.AppThemeMode
+import com.blockreels.app.data.CustomPaletteConfig
 
 val LocalIsDarkTheme = compositionLocalOf { false }
 val LocalAppIconStyle = compositionLocalOf { AppIconStyle.TONAL_COOKIE }
@@ -70,6 +71,7 @@ fun BlockReelsTheme(
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     dynamicColorEnabled: Boolean = false,
     colorSeed: AppColorSeed = AppColorSeed.EMERALD,
+    customPalette: CustomPaletteConfig = CustomPaletteConfig(),
     contrastLevel: AppContrastLevel = AppContrastLevel.STANDARD,
     cornerStyle: AppCornerStyle = AppCornerStyle.EXPRESSIVE,
     fontScale: AppFontScale = AppFontScale.DEFAULT,
@@ -85,17 +87,20 @@ fun BlockReelsTheme(
     }
     val amoled = themeMode == AppThemeMode.AMOLED
 
-    val colorScheme = if (dynamicColorEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val dynamicBase = if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        val withAmoled = if (isDark && amoled) applyAmoledSurfaces(dynamicBase) else dynamicBase
-        applyContrastBoost(withAmoled, contrastLevel, isDark)
-    } else {
-        buildSeedColorScheme(
-            seed = colorSeed,
-            isDark = isDark,
-            amoled = amoled,
-            contrast = contrastLevel
-        )
+    val colorScheme = remember(dynamicColorEnabled, colorSeed, customPalette, isDark, amoled, contrastLevel, context) {
+        if (dynamicColorEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val dynamicBase = if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val withAmoled = if (isDark && amoled) applyAmoledSurfaces(dynamicBase) else dynamicBase
+            applyContrastBoost(withAmoled, contrastLevel, isDark)
+        } else {
+            buildSeedColorScheme(
+                seed = colorSeed,
+                isDark = isDark,
+                amoled = amoled,
+                contrast = contrastLevel,
+                customPalette = customPalette
+            )
+        }
     }
 
     val shapes = remember(cornerStyle) { shapesForCornerStyle(cornerStyle) }

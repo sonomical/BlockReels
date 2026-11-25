@@ -18,6 +18,7 @@ import com.blockreels.app.data.AppSettingsState
 import com.blockreels.app.data.AppThemeMode
 import com.blockreels.app.data.BlockReelsRepository
 import com.blockreels.app.data.CryptoPinHelper
+import com.blockreels.app.data.CustomPaletteConfig
 import com.blockreels.app.data.DayCountPoint
 import com.blockreels.app.data.HistoryRecord
 import com.blockreels.app.data.PlatformBreakdownItem
@@ -35,8 +36,11 @@ import com.blockreels.app.state.InterventionMode
 import com.blockreels.app.state.NativeEventBus
 import com.blockreels.app.state.NativeStateStore
 import com.blockreels.app.state.ScheduleRule
+import com.blockreels.app.ui.components.AppIconPrewarmer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,38 +71,29 @@ data class BlockReelsUiState(
     val analytics: AnalyticsSummary = AnalyticsSummary(),
     val nowMillis: Long = System.currentTimeMillis()
 ) {
-    val protectionStatus: ProtectionStatus
-        get() = when {
-            !systemHealth.accessibilityEnabled -> ProtectionStatus.PERMISSION_NEEDED
-            !settings.masterEnabled -> ProtectionStatus.PAUSED
-            else -> ProtectionStatus.PROTECTED
-        }
+    val protectionStatus: ProtectionStatus = when {
+        !systemHealth.accessibilityEnabled -> ProtectionStatus.PERMISSION_NEEDED
+        !settings.masterEnabled -> ProtectionStatus.PAUSED
+        else -> ProtectionStatus.PROTECTED
+    }
 
-    val activeQuickBoost: ScheduleItem?
-        get() = schedules.firstOrNull {
-            it.isQuickBoost && it.isActive && (it.expiresAtMillis ?: 0L) > nowMillis
-        }
+    val activeQuickBoost: ScheduleItem? = schedules.firstOrNull {
+        it.isQuickBoost && it.isActive && (it.expiresAtMillis ?: 0L) > nowMillis
+    }
 
-    val regularSchedules: List<ScheduleItem>
-        get() = schedules.filterNot { it.isQuickBoost }
+    val regularSchedules: List<ScheduleItem> = schedules.filterNot { it.isQuickBoost }
 
-    val enabledTargetsCount: Int
-        get() = targets.count { it.isEnabled }
+    val enabledTargetsCount: Int = targets.count { it.isEnabled }
 
-    val installedTargetsCount: Int
-        get() = targets.count { it.isInstalled }
+    val installedTargetsCount: Int = targets.count { it.isInstalled }
 
-    val activeRegularSchedulesCount: Int
-        get() = regularSchedules.count { it.isActive }
+    val activeRegularSchedulesCount: Int = regularSchedules.count { it.isActive }
 
-    val totalPassesUsedToday: Int
-        get() = passesUsedToday.values.sum()
+    val totalPassesUsedToday: Int = passesUsedToday.values.sum()
 
-    val blocksLast7Days: Int
-        get() = analytics.dailySeries.sumOf { it.count }
+    val blocksLast7Days: Int = analytics.dailySeries.sumOf { it.count }
 
-    val topBlockedPlatform: PlatformBreakdownItem?
-        get() = analytics.platformBreakdown.firstOrNull()
+    val topBlockedPlatform: PlatformBreakdownItem? = analytics.platformBreakdown.firstOrNull()
 }
 
 class BlockReelsViewModel(application: Application) : AndroidViewModel(application) {
@@ -111,6 +106,7 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     val snackbarMessages: SharedFlow<String> = _snackbarMessages.asSharedFlow()
 
     private var boostTickerJob: Job? = null
+    private var settingsPersistJob: Job? = null
 
     init {
         NativeEventBus.bindStateStore()
@@ -120,8 +116,11 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun loadInitialData() {
         viewModelScope.launch {
-            val loaded = repository.loadAll()
-            val health = withContext(Dispatchers.IO) { readSystemHealth() }
+            val (loaded, health) = coroutineScope {
+                val loadedDeferred = async { repository.loadAll() }
+                val healthDeferred = async(Dispatchers.IO) { readSystemHealth() }
+                loadedDeferred.await() to healthDeferred.await()
+            }
             val analytics = withContext(Dispatchers.Default) {
                 computeAnalytics(loaded.history, _uiState.value.selectedStatsRange)
             }
@@ -142,6 +141,14 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
             }
             reconcileForegroundService(loaded.settings.masterEnabled, health.accessibilityEnabled)
             syncBoostTicker()
+            // Non-blocking background sync & icon cache pre-warming after first frame is live
+            launch(Dispatchers.IO) {
+                repository.syncProtectionState(loaded.settings, loaded.targets, loaded.schedules)
+                AppIconPrewarmer.prewarm(
+                    getApplication(),
+                    loaded.targets.map { it.packageName }
+                )
+            }
         }
     }
 
@@ -338,19 +345,19 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateHoldDuration(seconds: Int) {
-        updateSettings { it.copy(holdDurationSeconds = seconds.coerceIn(3, 30)) }
+        updateSettings(debounced = true) { it.copy(holdDurationSeconds = seconds.coerceIn(3, 30)) }
     }
 
     fun updateAllowanceMinutes(minutes: Int) {
-        updateSettings { it.copy(allowanceMinutes = minutes.coerceIn(1, 30)) }
+        updateSettings(debounced = true) { it.copy(allowanceMinutes = minutes.coerceIn(1, 30)) }
     }
 
     fun updateDailyPassLimit(limit: Int) {
-        updateSettings { it.copy(dailyPassLimit = limit.coerceIn(0, 10)) }
+        updateSettings(debounced = true) { it.copy(dailyPassLimit = limit.coerceIn(0, 10)) }
     }
 
     fun updateEntryDelaySeconds(seconds: Int) {
-        updateSettings { it.copy(entryDelaySeconds = seconds.coerceIn(0, 10)) }
+        updateSettings(debounced = true) { it.copy(entryDelaySeconds = seconds.coerceIn(0, 10)) }
     }
 
     fun updateSensitivity(sensitivity: DetectionSensitivity) {
@@ -393,11 +400,11 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateDefaultReelsGoalMinutes(minutes: Int) {
-        updateSettings { it.copy(defaultReelsGoalMinutes = minutes.coerceIn(0, 180)) }
+        updateSettings(debounced = true) { it.copy(defaultReelsGoalMinutes = minutes.coerceIn(0, 180)) }
     }
 
     fun updateDefaultFeedGoalMinutes(minutes: Int) {
-        updateSettings { it.copy(defaultFeedGoalMinutes = minutes.coerceIn(0, 180)) }
+        updateSettings(debounced = true) { it.copy(defaultFeedGoalMinutes = minutes.coerceIn(0, 180)) }
     }
 
     fun applyBlockingPolicyAndGoalsToAllApps(
@@ -425,10 +432,11 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                 feedDailyGoalMinutes = clampedFeed
             )
         }
+        val currentSchedules = _uiState.value.schedules
         _uiState.update { it.copy(settings = nextSettings, targets = nextTargets) }
+        settingsPersistJob?.cancel()
         viewModelScope.launch {
-            repository.saveSettings(nextSettings, nextTargets, _uiState.value.schedules)
-            repository.saveTargets(nextSettings, nextTargets, _uiState.value.schedules)
+            repository.saveAll(nextSettings, nextTargets, currentSchedules)
         }
         emitMessage("Applied ${policy.label} and daily goals to all ${nextTargets.size} apps")
     }
@@ -452,6 +460,23 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setColorSeed(seed: AppColorSeed) {
         updateSettings { it.copy(colorSeed = seed, dynamicColorEnabled = false) }
+    }
+
+    fun setCustomPalette(palette: CustomPaletteConfig) {
+        val sanitized = palette.copy(
+            primaryArgb = palette.primaryArgb or 0xFF000000L,
+            secondaryArgb = palette.secondaryArgb or 0xFF000000L,
+            tertiaryArgb = palette.tertiaryArgb or 0xFF000000L,
+            surfaceTintStrength = palette.surfaceTintStrength.coerceIn(0f, 1f)
+        )
+        updateSettings {
+            it.copy(
+                colorSeed = AppColorSeed.CUSTOM,
+                customPalette = sanitized,
+                dynamicColorEnabled = false
+            )
+        }
+        emitMessage("Custom color palette applied")
     }
 
     fun setContrastLevel(level: AppContrastLevel) {
@@ -627,9 +652,8 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
                             schedules = restoredSchedules
                         )
                     }
-                    repository.saveSettings(restoredSettings, restoredTargets, restoredSchedules)
-                    repository.saveTargets(restoredSettings, restoredTargets, restoredSchedules)
-                    repository.saveSchedules(restoredSettings, restoredTargets, restoredSchedules)
+                    settingsPersistJob?.cancel()
+                    repository.saveAll(restoredSettings, restoredTargets, restoredSchedules)
                     syncBoostTicker()
                     emitMessage("Backup restored")
                 }
@@ -647,11 +671,19 @@ class BlockReelsViewModel(application: Application) : AndroidViewModel(applicati
     fun openOverlaySettings() = NativeEventBus.openOverlaySettings(getApplication())
     fun openNotificationSettings() = NativeEventBus.openNotificationSettings(getApplication())
 
-    private fun updateSettings(transform: (AppSettingsState) -> AppSettingsState) {
-        val next = transform(_uiState.value.settings)
+    private fun updateSettings(
+        debounced: Boolean = false,
+        transform: (AppSettingsState) -> AppSettingsState
+    ) {
+        val current = _uiState.value
+        val next = transform(current.settings)
+        if (next == current.settings) return
         _uiState.update { it.copy(settings = next) }
-        viewModelScope.launch {
-            repository.saveSettings(next, _uiState.value.targets, _uiState.value.schedules)
+        settingsPersistJob?.cancel()
+        settingsPersistJob = viewModelScope.launch {
+            if (debounced) delay(140L)
+            val snapshot = _uiState.value
+            repository.saveSettings(snapshot.settings, snapshot.targets, snapshot.schedules)
         }
     }
 

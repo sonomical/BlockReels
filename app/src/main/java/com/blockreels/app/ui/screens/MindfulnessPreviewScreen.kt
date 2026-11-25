@@ -26,13 +26,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,7 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -54,7 +53,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -78,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import com.blockreels.app.R
 import com.blockreels.app.state.AudioAction
 import com.blockreels.app.state.ContentBlockPolicy
+import com.blockreels.app.ui.components.ExpressiveShapes
 import com.blockreels.app.ui.components.segmentedListShape
 import com.blockreels.app.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
@@ -176,7 +175,7 @@ fun MindfulnessPreviewScreen(
                 accentRole = ActionAccent.PRIMARY
             ),
             PlannedActionStep(
-                icon = Icons.Rounded.VolumeOff,
+                icon = Icons.AutoMirrored.Rounded.VolumeOff,
                 title = when (audioAction) {
                     AudioAction.SILENCE -> "Silence video audio"
                     AudioAction.DUCK -> "Lower background audio"
@@ -372,7 +371,7 @@ fun MindfulnessPreviewScreen(
 
                     // Expressive status emblem anchored cleanly at bottom-end of illustration
                     Surface(
-                        shape = MaterialShapes.Cookie7Sided.toShape(),
+                        shape = ExpressiveShapes.Cookie7Sided,
                         color = if (unlocked) MaterialTheme.colorScheme.primary
                         else if (strictMode) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.primaryContainer,

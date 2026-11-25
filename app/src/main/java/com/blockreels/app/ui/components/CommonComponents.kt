@@ -14,13 +14,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,6 +29,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +56,28 @@ import com.blockreels.app.state.InterventionMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * Shared Material 3 Expressive polygon shapes accessor.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+object ExpressiveShapes {
+    val Cookie4Sided: Shape
+        @Composable get() = MaterialShapes.Cookie4Sided.toShape()
+    val Cookie7Sided: Shape
+        @Composable get() = MaterialShapes.Cookie7Sided.toShape()
+    val Cookie9Sided: Shape
+        @Composable get() = MaterialShapes.Cookie9Sided.toShape()
+    val Pill: Shape
+        @Composable get() = MaterialShapes.Pill.toShape()
+    val Slanted: Shape
+        @Composable get() = MaterialShapes.Slanted.toShape()
+}
+
+private val SEGMENT_SINGLE_SHAPE = RoundedCornerShape(20.dp)
+private val SEGMENT_FIRST_SHAPE = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+private val SEGMENT_LAST_SHAPE = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
+private val SEGMENT_MIDDLE_SHAPE = RoundedCornerShape(4.dp)
 
 /**
  * Pure opaque Material 3 Expressive container card.
@@ -84,11 +108,11 @@ fun ExpressiveCard(
  * outer corners = 20.dp, inner adjacent corners = 4.dp, separated by 2.dp vertical gap.
  */
 fun segmentedListShape(index: Int, count: Int): Shape {
-    if (count <= 1) return RoundedCornerShape(20.dp)
+    if (count <= 1) return SEGMENT_SINGLE_SHAPE
     return when (index) {
-        0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-        count - 1 -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
-        else -> RoundedCornerShape(4.dp)
+        0 -> SEGMENT_FIRST_SHAPE
+        count - 1 -> SEGMENT_LAST_SHAPE
+        else -> SEGMENT_MIDDLE_SHAPE
     }
 }
 
@@ -229,7 +253,7 @@ fun ModeBadge(
     val (label, icon, container, content) = when (mode) {
         InterventionMode.AUTO_BACK -> Quad(
             if (compact) "Back" else "Auto Back",
-            Icons.Rounded.Undo,
+            Icons.AutoMirrored.Rounded.Undo,
             MaterialTheme.colorScheme.secondaryContainer,
             MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -303,13 +327,18 @@ fun ScopeBadge(
 
 private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
+private val relativeDateFormatter = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue(): SimpleDateFormat = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
+}
+
 fun formatRelativeTime(timestampMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
     val diffSec = ((nowMillis - timestampMillis) / 1000L).coerceAtLeast(0L)
     return when {
         diffSec < 60L -> "Just now"
         diffSec < 3600L -> "${diffSec / 60L}m ago"
         diffSec < 86_400L -> "${diffSec / 3600L}h ago"
-        else -> SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(timestampMillis))
+        else -> (relativeDateFormatter.get() ?: SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()))
+            .format(Date(timestampMillis))
     }
 }
 

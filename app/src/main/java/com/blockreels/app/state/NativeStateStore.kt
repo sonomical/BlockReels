@@ -187,6 +187,12 @@ object NativeStateStore {
     @Volatile private var preferencesStore: DataStore<Preferences>? = null
     @Volatile private var ready = false
 
+    private val calendarPool = object : ThreadLocal<Calendar>() {
+        override fun initialValue(): Calendar = Calendar.getInstance()
+    }
+    @Volatile private var cachedDateKey: String = ""
+    @Volatile private var cachedDateKeyMinute: Long = -1L
+
     @Volatile
     private var appContext: Context? = null
     private val metricsDate = AtomicReference(currentDateKey())
@@ -367,24 +373,36 @@ object NativeStateStore {
     }
 
     fun findActiveSchedule(packageName: String, nowMillis: Long = System.currentTimeMillis()): ScheduleRule? {
-        val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        val list = schedules.get()
+        if (list.isEmpty()) return null
+
+        val calendar = calendarPool.get() ?: Calendar.getInstance()
+        calendar.timeInMillis = nowMillis
         val currentIsoDay = calendarIsoDay(calendar)
         val previousIsoDay = if (currentIsoDay == 1) 7 else currentIsoDay - 1
         val currentMinute =
             calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
 
-        val active = schedules.get().filter {
-            it.isTimeActive(currentIsoDay, previousIsoDay, currentMinute, packageName, nowMillis)
+        var firstRegularMatch: ScheduleRule? = null
+        for (i in 0 until list.size) {
+            val rule = list[i]
+            if (rule.isTimeActive(currentIsoDay, previousIsoDay, currentMinute, packageName, nowMillis)) {
+                // Quick Focus Boost takes precedence over recurring schedules if both overlap.
+                if (rule.id.startsWith(ScheduleRule.QUICK_BOOST_ID_PREFIX)) {
+                    return rule
+                }
+                if (firstRegularMatch == null) {
+                    firstRegularMatch = rule
+                }
+            }
         }
-        // Quick Focus Boost takes precedence over recurring schedules if both overlap.
-        return active.firstOrNull { it.id.startsWith(ScheduleRule.QUICK_BOOST_ID_PREFIX) }
-            ?: active.firstOrNull()
+        return firstRegularMatch
     }
 
     fun isAppBlockingActive(packageName: String): Boolean {
         if (!isReady() || !masterEnabled.get()) return false
-        if (findActiveSchedule(packageName) != null) return true
-        return appToggles[packageName] ?: false
+        if (appToggles[packageName] == true) return true
+        return findActiveSchedule(packageName) != null
     }
 
     fun getInterventionConfig(): InterventionConfig = interventionConfig.get()
@@ -739,8 +757,30 @@ object NativeStateStore {
         }
     }
 
-    private fun currentDateKey(): String =
-        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    private fun currentDateKey(): String {
+        val nowMs = System.currentTimeMillis()
+        val minuteBucket = nowMs / 60_000L
+        if (minuteBucket == cachedDateKeyMinute && cachedDateKey.isNotEmpty()) {
+            return cachedDateKey
+        }
+        val cal = calendarPool.get() ?: Calendar.getInstance()
+        cal.timeInMillis = nowMs
+        val year = cal.get(Calendar.YEAR)
+        val month = cal.get(Calendar.MONTH) + 1
+        val day = cal.get(Calendar.DAY_OF_MONTH)
+        val key = buildString(10) {
+            append(year)
+            append('-')
+            if (month < 10) append('0')
+            append(month)
+            append('-')
+            if (day < 10) append('0')
+            append(day)
+        }
+        cachedDateKey = key
+        cachedDateKeyMinute = minuteBucket
+        return key
+    }
 
     private fun calendarIsoDay(calendar: Calendar): Int {
         val day = calendar.get(Calendar.DAY_OF_WEEK)

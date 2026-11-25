@@ -52,15 +52,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +77,7 @@ import com.blockreels.app.state.ContentBlockPolicy
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
 import com.blockreels.app.ui.components.ExpressiveCard
 import com.blockreels.app.ui.components.ExpressiveNumberSelector
+import com.blockreels.app.ui.components.ExpressiveShapes
 import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.segmentedListShape
@@ -379,23 +379,25 @@ private fun WelcomeStep() {
         )
     }
 
-    val highlights = listOf(
-        Triple(
-            Icons.Rounded.Shield,
-            "Surgical feed blocking",
-            "Block Reels, main feeds, or both across every supported app."
-        ),
-        Triple(
-            Icons.Rounded.Flag,
-            "Daily consumption goals",
-            "Set exact minute limits or quick presets with mindful pause friction."
-        ),
-        Triple(
-            Icons.Rounded.Lock,
-            "Private by design",
-            "Zero network permissions, zero cloud telemetry, 100% local."
+    val highlights = remember {
+        listOf(
+            Triple(
+                Icons.Rounded.Shield,
+                "Surgical feed blocking",
+                "Block Reels, main feeds, or both across every supported app."
+            ),
+            Triple(
+                Icons.Rounded.Flag,
+                "Daily consumption goals",
+                "Set exact minute limits or quick presets with mindful pause friction."
+            ),
+            Triple(
+                Icons.Rounded.Lock,
+                "Private by design",
+                "Zero network permissions, zero cloud telemetry, 100% local."
+            )
         )
-    )
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         highlights.forEachIndexed { idx, (icon, title, subtitle) ->
@@ -410,7 +412,7 @@ private fun WelcomeStep() {
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Surface(
-                        shape = MaterialShapes.Cookie7Sided.toShape(),
+                        shape = ExpressiveShapes.Cookie7Sided,
                         color = if (idx == 0) MaterialTheme.colorScheme.primaryContainer
                         else if (idx == 1) MaterialTheme.colorScheme.secondaryContainer
                         else MaterialTheme.colorScheme.tertiaryContainer,
@@ -451,7 +453,7 @@ private fun TargetAppsStep(
     targets: List<TargetAppConfig>,
     onToggleTarget: (String, Boolean) -> Unit
 ) {
-    val selectedCount = targets.count { it.isEnabled }
+    val selectedCount = remember(targets) { targets.count { it.isEnabled } }
 
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
@@ -584,7 +586,7 @@ private fun GuardrailsAndGoalsStep(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
-            shape = MaterialShapes.Cookie7Sided.toShape(),
+            shape = ExpressiveShapes.Cookie7Sided,
             color = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.size(56.dp)
@@ -795,7 +797,7 @@ private fun PermissionSetupCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Surface(
-                    shape = MaterialShapes.Cookie7Sided.toShape(),
+                    shape = ExpressiveShapes.Cookie7Sided,
                     color = if (granted) MaterialTheme.colorScheme.primaryContainer
                     else MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = if (granted) MaterialTheme.colorScheme.onPrimaryContainer

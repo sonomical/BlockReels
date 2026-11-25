@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -41,16 +42,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,13 +73,24 @@ import com.blockreels.app.data.AppCornerStyle
 import com.blockreels.app.data.AppFontScale
 import com.blockreels.app.data.AppIconStyle
 import com.blockreels.app.data.AppThemeMode
+import com.blockreels.app.data.CustomPaletteConfig
 import com.blockreels.app.ui.components.AccessibilityDisclosureDialog
 import com.blockreels.app.ui.components.ConnectedToggleButtonGroup
+import com.blockreels.app.ui.components.CustomPaletteEditorSheet
+import com.blockreels.app.ui.components.ExpressiveShapes
 import com.blockreels.app.ui.components.ExpressiveSwitch
 import com.blockreels.app.ui.components.PlatformAvatar
 import com.blockreels.app.ui.components.SectionHeader
 import com.blockreels.app.ui.components.segmentedListShape
 import com.blockreels.app.viewmodel.BlockReelsUiState
+
+private val THEME_PREVIEW_PLATFORMS = listOf(
+    "INSTAGRAM" to "com.instagram.android",
+    "YOUTUBE" to "com.google.android.youtube",
+    "TIKTOK" to "com.zhiliaoapp.musically",
+    "FACEBOOK" to "com.facebook.katana",
+    "SNAPCHAT" to "com.snapchat.android"
+)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -90,6 +101,7 @@ fun SettingsScreen(
     onSelectTheme: (AppThemeMode) -> Unit,
     onToggleDynamicColor: (Boolean) -> Unit,
     onSelectColorSeed: (AppColorSeed) -> Unit,
+    onSaveCustomPalette: (CustomPaletteConfig) -> Unit,
     onSelectContrast: (AppContrastLevel) -> Unit,
     onSelectCornerStyle: (AppCornerStyle) -> Unit,
     onSelectFontScale: (AppFontScale) -> Unit,
@@ -112,6 +124,7 @@ fun SettingsScreen(
     var showDisclosureDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showLicenseDialog by remember { mutableStateOf(false) }
+    var showCustomPaletteSheet by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -147,7 +160,7 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Surface(
-                                        shape = MaterialShapes.Cookie7Sided.toShape(),
+                                        shape = ExpressiveShapes.Cookie7Sided,
                                         color = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(38.dp)
@@ -181,13 +194,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                listOf(
-                                    "INSTAGRAM" to "com.instagram.android",
-                                    "YOUTUBE" to "com.google.android.youtube",
-                                    "TIKTOK" to "com.zhiliaoapp.musically",
-                                    "FACEBOOK" to "com.facebook.katana",
-                                    "SNAPCHAT" to "com.snapchat.android"
-                                ).forEach { (platformKey, pkg) ->
+                                THEME_PREVIEW_PLATFORMS.forEach { (platformKey, pkg) ->
                                     PlatformAvatar(
                                         platformKey = platformKey,
                                         packageName = pkg,
@@ -289,12 +296,48 @@ fun SettingsScreen(
                                     AppColorSeed.entries.forEach { seed ->
                                         val selected = !uiState.settings.dynamicColorEnabled &&
                                             uiState.settings.colorSeed == seed
-                                        ColorSeedSwatch(
-                                            seed = seed,
-                                            selected = selected,
-                                            onClick = { onSelectColorSeed(seed) }
-                                        )
+                                        if (seed == AppColorSeed.CUSTOM) {
+                                            CustomPaletteSwatch(
+                                                palette = uiState.settings.customPalette,
+                                                selected = selected,
+                                                onClick = {
+                                                    if (selected) {
+                                                        showCustomPaletteSheet = true
+                                                    } else {
+                                                        onSelectColorSeed(AppColorSeed.CUSTOM)
+                                                    }
+                                                }
+                                            )
+                                        } else {
+                                            ColorSeedSwatch(
+                                                seed = seed,
+                                                selected = selected,
+                                                onClick = { onSelectColorSeed(seed) }
+                                            )
+                                        }
                                     }
+                                }
+
+                                FilledTonalButton(
+                                    onClick = { showCustomPaletteSheet = true },
+                                    shapes = ButtonDefaults.shapes(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("settings_customize_palette_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Tune,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                                    Text(
+                                        if (uiState.settings.colorSeed == AppColorSeed.CUSTOM && !uiState.settings.dynamicColorEnabled) {
+                                            "Edit Custom Color Palette"
+                                        } else {
+                                            "Create Custom Color Palette"
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -644,7 +687,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             Surface(
-                                shape = MaterialShapes.Cookie7Sided.toShape(),
+                                shape = ExpressiveShapes.Cookie7Sided,
                                 color = MaterialTheme.colorScheme.secondary,
                                 contentColor = MaterialTheme.colorScheme.onSecondary,
                                 modifier = Modifier.size(44.dp)
@@ -784,6 +827,68 @@ fun SettingsScreen(
                 ) { Text("Close") }
             }
         )
+    }
+    if (showCustomPaletteSheet) {
+        CustomPaletteEditorSheet(
+            initial = uiState.settings.customPalette,
+            amoled = uiState.settings.themeMode == AppThemeMode.AMOLED,
+            contrastLevel = uiState.settings.contrastLevel,
+            onDismiss = { showCustomPaletteSheet = false },
+            onApply = { updated ->
+                onSaveCustomPalette(updated)
+                showCustomPaletteSheet = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun CustomPaletteSwatch(
+    palette: CustomPaletteConfig,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier.testTag("settings_seed_custom")
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(palette.primaryArgb),
+                    modifier = Modifier.size(16.dp)
+                ) {}
+                Surface(
+                    shape = CircleShape,
+                    color = Color(palette.secondaryArgb),
+                    modifier = Modifier.size(16.dp)
+                ) {}
+                Surface(
+                    shape = CircleShape,
+                    color = Color(palette.tertiaryArgb),
+                    modifier = Modifier.size(16.dp)
+                ) {}
+            }
+            Text(
+                text = "Custom",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 

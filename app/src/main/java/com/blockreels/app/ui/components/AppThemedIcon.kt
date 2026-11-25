@@ -16,13 +16,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
@@ -45,22 +44,38 @@ private data class CachedThemedIcon(
     val themedMonochrome: ImageBitmap?
 )
 
+object AppIconPrewarmer {
+    fun prewarm(context: Context, packageNames: Iterable<String>) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val appContext = context.applicationContext
+        for (pkg in packageNames) {
+            if (AppIconMemoryCache.get(pkg) == null) {
+                AppIconMemoryCache.load(appContext, pkg)
+            }
+        }
+    }
+}
+
 private object AppIconMemoryCache {
-    private val cache = ConcurrentHashMap<String, CachedThemedIcon>()
+    private val cache = ConcurrentHashMap<String, CachedThemedIcon>(16)
     private val EMPTY = CachedThemedIcon(themedMonochrome = null)
 
     fun get(packageName: String): CachedThemedIcon? = cache[packageName]
 
-    fun load(context: Context, packageName: String, pxSize: Int = 128): CachedThemedIcon {
+    fun load(context: Context, packageName: String, pxSize: Int = 96): CachedThemedIcon {
         cache[packageName]?.let { return it }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            cache[packageName] = EMPTY
+            return EMPTY
+        }
         val loaded = try {
             val drawable: Drawable = context.packageManager.getApplicationIcon(packageName)
-            val monoBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && drawable is AdaptiveIconDrawable) {
+            val monoBitmap = if (drawable is AdaptiveIconDrawable) {
                 drawable.monochrome?.toBitmap(width = pxSize, height = pxSize)?.asImageBitmap()
             } else {
                 null
             }
-            CachedThemedIcon(themedMonochrome = monoBitmap)
+            if (monoBitmap != null) CachedThemedIcon(themedMonochrome = monoBitmap) else EMPTY
         } catch (_: Exception) {
             EMPTY
         }
@@ -99,33 +114,36 @@ fun AppThemedIcon(
         }
     }
 
+    val squircleShape = remember(sizeDp) { RoundedCornerShape((sizeDp * 0.30f).dp) }
     val containerShape = when (iconStyle) {
-        AppIconStyle.TONAL_COOKIE -> MaterialShapes.Cookie4Sided.toShape()
-        AppIconStyle.TONAL_SQUIRCLE -> RoundedCornerShape((sizeDp * 0.30f).dp)
+        AppIconStyle.TONAL_COOKIE -> ExpressiveShapes.Cookie4Sided
+        AppIconStyle.TONAL_SQUIRCLE -> squircleShape
         AppIconStyle.NEUTRAL_TONAL -> CircleShape
     }
 
+    val scheme = MaterialTheme.colorScheme
     val containerColor = if (!active) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+        scheme.surfaceContainerHighest
     } else {
         when (iconStyle) {
-            AppIconStyle.TONAL_COOKIE -> MaterialTheme.colorScheme.secondaryContainer
-            AppIconStyle.TONAL_SQUIRCLE -> MaterialTheme.colorScheme.primaryContainer
-            AppIconStyle.NEUTRAL_TONAL -> MaterialTheme.colorScheme.surfaceContainerHighest
+            AppIconStyle.TONAL_COOKIE -> scheme.secondaryContainer
+            AppIconStyle.TONAL_SQUIRCLE -> scheme.primaryContainer
+            AppIconStyle.NEUTRAL_TONAL -> scheme.surfaceContainerHighest
         }
     }
 
     val contentColor = if (!active) {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        scheme.onSurfaceVariant
     } else {
         when (iconStyle) {
-            AppIconStyle.TONAL_COOKIE -> MaterialTheme.colorScheme.onSecondaryContainer
-            AppIconStyle.TONAL_SQUIRCLE -> MaterialTheme.colorScheme.onPrimaryContainer
-            AppIconStyle.NEUTRAL_TONAL -> MaterialTheme.colorScheme.primary
+            AppIconStyle.TONAL_COOKIE -> scheme.onSecondaryContainer
+            AppIconStyle.TONAL_SQUIRCLE -> scheme.onPrimaryContainer
+            AppIconStyle.NEUTRAL_TONAL -> scheme.primary
         }
     }
 
     val monoBitmap = cachedIcon?.themedMonochrome
+    val iconSize = remember(sizeDp) { (sizeDp * 0.52f).dp }
 
     Surface(
         modifier = modifier.size(sizeDp.dp),
@@ -134,16 +152,18 @@ fun AppThemedIcon(
         contentColor = contentColor
     ) {
         if (monoBitmap != null) {
+            val tintFilter = remember(contentColor) { ColorFilter.tint(contentColor) }
+            val pad = remember(sizeDp) { (sizeDp * 0.14f).dp }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding((sizeDp * 0.14f).dp),
+                    .padding(pad),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
                     bitmap = monoBitmap,
                     contentDescription = "$platformKey icon",
-                    colorFilter = ColorFilter.tint(contentColor),
+                    colorFilter = tintFilter,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -163,14 +183,14 @@ fun AppThemedIcon(
                         painter = painterResource(id = brandRes),
                         contentDescription = "$platformKey icon",
                         tint = contentColor,
-                        modifier = Modifier.size((sizeDp * 0.52f).dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Rounded.Shield,
                         contentDescription = "$platformKey icon",
                         tint = contentColor,
-                        modifier = Modifier.size((sizeDp * 0.52f).dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 }
             }
